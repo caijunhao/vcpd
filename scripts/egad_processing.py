@@ -10,11 +10,12 @@ max_width = 0.08
 
 
 def main(args):
+    if not os.path.exists(args.output):
+        os.makedirs(args.output)
     ms = ml.MeshSet()
-    mesh_set = 'egad_{}_set'.format(args.set)
-    for obj_name in os.listdir(os.path.join(args.mesh_path, args.set)):
+    for obj_name in os.listdir(os.path.join(args.mesh_path)):
         print(obj_name)
-        ms.load_new_mesh(os.path.join(args.mesh_path, mesh_set, obj_name))
+        ms.load_new_mesh(os.path.join(args.mesh_path, obj_name))
         # ms.apply_filter('transform_align_to_principal_axis')
         ms.apply_filter('transform_translate_center_set_origin', traslmethod=2)
         ms.apply_filter('transform_scale_normalize', axisx=0.1)
@@ -36,7 +37,7 @@ def main(args):
         ms.apply_filter('normalize_vertex_normals')
         ms.apply_filter('remove_duplicate_vertices')
         ms.apply_filter('remove_duplicate_faces')
-        ms.save_current_mesh(os.path.join(args.mesh_path, args.set, obj_name))
+        ms.save_current_mesh(os.path.join(args.output, obj_name))
 
 
 def compute_patch_normal(mesh, orders_of_neigh=1):
@@ -91,10 +92,6 @@ if __name__ == '__main__':
                         type=str,
                         required=True,
                         help='path of the mesh set.')
-    parser.add_argument('--set',
-                        type=str,
-                        required=True,
-                        help='train or eval.')
     parser.add_argument('--w',
                         type=float,
                         default=0.08,
