@@ -18,7 +18,7 @@ def main(args):
     p.setGravity(0, 0, -9.8)
     with open(args.config, 'r') as config_file:
         cfg = json.load(config_file)
-    pg = PandaGripper('assets')
+    pg = PandaGripper('../assets')
     pg.set_pose([1, 0, 0], [0, 0, 0, 1])
     obj_list = os.listdir(os.path.join(args.mesh_path))
     np.random.shuffle(obj_list)

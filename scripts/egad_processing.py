@@ -2,39 +2,41 @@ from functools import reduce
 import numpy as np
 import pymeshlab as ml
 import trimesh
+import argparse
 import os
 
 
-ms = ml.MeshSet()
-mesh_path = '/harddisk/jcaiaq/dataset/egad'
-mesh_set = 'egad_train_set'
 max_width = 0.08
 
-for obj_name in os.listdir(os.path.join(mesh_path, mesh_set)):
-    print(obj_name)
-    ms.load_new_mesh(os.path.join(mesh_path, mesh_set, obj_name))
-    # ms.apply_filter('transform_align_to_principal_axis')
-    ms.apply_filter('transform_translate_center_set_origin', traslmethod=2)
-    ms.apply_filter('transform_scale_normalize', axisx=0.1)
-    ms.apply_filter('transform_scale_normalize', axisx=0.1)
-    ms.apply_filter('transform_scale_normalize', axisx=0.1)
-    min_size = np.min(ms.current_mesh().bounding_box().max() - ms.current_mesh().bounding_box().min())
-    scale_factor = max_width * 0.8 / min_size
-    if scale_factor < 1:
-        ms.apply_filter('transform_scale_normalize', axisx=scale_factor)
-    ms.apply_filter('repair_non_manifold_edges')
-    # ms.apply_filter('subdivision_surfaces_midpoint')
-    # ms.apply_filter('taubin_smooth', lambda_=1.0)
-    ms.apply_filter('taubin_smooth', lambda_=0.5)
-    ms.apply_filter('laplacian_smooth_surface_preserving', angledeg=0.5)
-    # ms.apply_filter('simplification_clustering_decimation')
-    ms.apply_filter('re_compute_face_normals')
-    ms.apply_filter('normalize_face_normals')
-    ms.apply_filter('re_compute_vertex_normals', weightmode=2)
-    ms.apply_filter('normalize_vertex_normals')
-    ms.apply_filter('remove_duplicate_vertices')
-    ms.apply_filter('remove_duplicate_faces')
-    ms.save_current_mesh(os.path.join(mesh_path, 'train', obj_name))
+
+def main(args):
+    ms = ml.MeshSet()
+    mesh_set = 'egad_{}_set'.format(args.set)
+    for obj_name in os.listdir(os.path.join(args.mesh_path, args.set)):
+        print(obj_name)
+        ms.load_new_mesh(os.path.join(args.mesh_path, mesh_set, obj_name))
+        # ms.apply_filter('transform_align_to_principal_axis')
+        ms.apply_filter('transform_translate_center_set_origin', traslmethod=2)
+        ms.apply_filter('transform_scale_normalize', axisx=0.1)
+        ms.apply_filter('transform_scale_normalize', axisx=0.1)
+        ms.apply_filter('transform_scale_normalize', axisx=0.1)
+        min_size = np.min(ms.current_mesh().bounding_box().max() - ms.current_mesh().bounding_box().min())
+        scale_factor = max_width * 0.8 / min_size
+        if scale_factor < 1:
+            ms.apply_filter('transform_scale_normalize', axisx=scale_factor)
+        ms.apply_filter('repair_non_manifold_edges')
+        # ms.apply_filter('subdivision_surfaces_midpoint')
+        # ms.apply_filter('taubin_smooth', lambda_=1.0)
+        ms.apply_filter('taubin_smooth', lambda_=0.5)
+        ms.apply_filter('laplacian_smooth_surface_preserving', angledeg=0.5)
+        # ms.apply_filter('simplification_clustering_decimation')
+        ms.apply_filter('re_compute_face_normals')
+        ms.apply_filter('normalize_face_normals')
+        ms.apply_filter('re_compute_vertex_normals', weightmode=2)
+        ms.apply_filter('normalize_vertex_normals')
+        ms.apply_filter('remove_duplicate_vertices')
+        ms.apply_filter('remove_duplicate_faces')
+        ms.save_current_mesh(os.path.join(args.mesh_path, args.set, obj_name))
 
 
 def compute_patch_normal(mesh, orders_of_neigh=1):
@@ -82,3 +84,23 @@ def compute_patch_normal(mesh, orders_of_neigh=1):
     # new_mesh.vertex_normals = n_pca
     return new_mesh
 
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='mesh processing on EGAD dataset.')
+    parser.add_argument('--mesh_path',
+                        type=str,
+                        required=True,
+                        help='path of the mesh set.')
+    parser.add_argument('--set',
+                        type=str,
+                        required=True,
+                        help='train or eval.')
+    parser.add_argument('--w',
+                        type=float,
+                        default=0.08,
+                        help='the maximal width of the gripper.')
+    parser.add_argument('--output',
+                        type=str,
+                        required=True,
+                        help='path to save the processed mesh set.')
+    main(parser.parse_args())
