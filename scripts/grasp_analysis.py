@@ -1,3 +1,4 @@
+from sim.utils import basic_rot_mat
 from sim.objects import RigidObject, PandaGripper
 from scipy.spatial.transform import Rotation
 import argparse
@@ -18,7 +19,7 @@ def main(args):
     p.setGravity(0, 0, -9.8)
     with open(args.config, 'r') as config_file:
         cfg = json.load(config_file)
-    pg = PandaGripper('../assets')
+    pg = PandaGripper('assets')
     pg.set_pose([1, 0, 0], [0, 0, 0, 1])
     obj_list = os.listdir(os.path.join(args.mesh_path))
     np.random.shuffle(obj_list)
@@ -43,7 +44,7 @@ def main(args):
                       'antipodal_mean': [np.zeros((0,))],
                       'antipodal_min': [np.zeros((0,))],
                       'collisions': [np.zeros((0, 64))],
-                      'quaternions': [np.zeros((0, 64, 4))]}
+                      'quaternions': [np.zeros((0, 4))]}
         for i in range(num_vertices):
             vertex, normal = mesh.vertices[i], mesh.vertex_normals[i]
             direction = np.mean(mesh.face_normals[mesh.vertex_faces[i]], axis=0)
@@ -115,7 +116,7 @@ def main(args):
                 curr_idx = np.array([i] * num_intersects)
                 directions = np.stack([normal] * num_intersects, axis=0)
                 cols = np.ones((num_intersects, cfg['num_angle']))
-                quats = np.zeros((num_intersects, cfg['num_angle'], 4))
+                quats = np.zeros((num_intersects, 4))
                 quats[..., -1] = 1
                 for j in range(num_intersects):
                     if min_score[j] >= cfg['th_min']:
@@ -126,10 +127,7 @@ def main(args):
                         z = np.cross(x, y)
                         base = np.stack([x, y, z], axis=1)
                         angles = np.arange(cfg['num_angle']) / cfg['num_angle'] * np.pi * 2
-                        cos_vec, sin_vec, zero_vec, one_vec = np.cos(angles), np.sin(angles), np.zeros_like(angles), np.ones_like(angles)
-                        delta_rots = np.stack([one_vec, zero_vec, zero_vec,
-                                               zero_vec, cos_vec, -sin_vec,
-                                               zero_vec, sin_vec, cos_vec], axis=1).reshape((cfg['num_angle'], 3, 3))
+                        delta_rots = basic_rot_mat(angles, axis='x')
                         rots = np.matmul(base.reshape((1, 3, 3)), delta_rots)
                         quat = Rotation.from_matrix(rots).as_quat()
                         for angle_idx in range(cfg['num_angle']):
@@ -137,7 +135,7 @@ def main(args):
                             pg.set_pose(pos, quat[angle_idx])
                             pg.set_gripper_width(widths[j] + 0.02)
                             cols[j, angle_idx] = int(pg.is_collided([]))
-                        quats[j*cfg['num_angle']:(j+1)*cfg['num_angle']] = quat
+                        quats[j] = quat[0]
                 grasp_info['vertex_ids'].append(curr_idx)
                 grasp_info['directions'].append(directions)
                 grasp_info['intersects'].append(selected_intersects)
@@ -160,7 +158,7 @@ def main(args):
                 grasp_info['antipodal_mean'].append(np.array([0]))
                 grasp_info['antipodal_min'].append(np.array([0]))
                 grasp_info['collisions'].append(np.ones((1, 64)))
-                grasp_info['quaternions'].append(np.zeros((1, 64, 4)))
+                grasp_info['quaternions'].append(np.zeros((1, 4)))
             p.removeUserDebugItem(line_id, physics_id)
             p.removeUserDebugItem(line2, physics_id)
         for k, v in grasp_info.items():

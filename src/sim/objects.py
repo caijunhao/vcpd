@@ -1,3 +1,4 @@
+from sim.utils import step_simulation
 from scipy.spatial.transform import Rotation
 import pybullet as p
 import numpy as np
@@ -40,12 +41,12 @@ class RigidObject(object):
     def wait_for_stable_condition(self, threshold=0.001, num_step=30):
         stable = False
         while not stable:
-            if self._is_stable(threshold, num_step):
+            if self.is_stable(threshold, num_step):
                 stable = True
 
-    def _is_stable(self, threshold=0.001, num_steps=30):
+    def is_stable(self, threshold=0.001, num_steps=30):
         pose1 = np.concatenate(self.get_pose(), axis=0)
-        [p.stepSimulation() for _ in range(num_steps)]
+        step_simulation(num_steps)
         pose2 = np.concatenate(self.get_pose(), axis=0)
         fluctuation = np.sqrt(np.sum((np.asanyarray(pose1) - np.asanyarray(pose2)) ** 2))
         # print('fluctuation: {}'.format(fluctuation))
@@ -64,9 +65,10 @@ class PandaGripper(object):
     def __init__(self, asset_path):
         self.components = ['hand', 'left_finger', 'right_finger']
         for component in self.components:
-            obj_path = os.path.join(asset_path, component+'.obj')
-            vis_params = {'shapeType': p.GEOM_MESH, 'fileName': obj_path, 'meshScale': [1] * 3}
-            col_params = {'shapeType': p.GEOM_MESH, 'fileName': obj_path, 'meshScale': [1] * 3}
+            vis_path = os.path.join(asset_path, component+'.obj')
+            col_path = os.path.join(asset_path, component+'_col.obj')
+            vis_params = {'shapeType': p.GEOM_MESH, 'fileName': vis_path, 'meshScale': [1] * 3}
+            col_params = {'shapeType': p.GEOM_MESH, 'fileName': col_path, 'meshScale': [1] * 3}
             body_params = {'baseMass': 0, 'basePosition': [0, 0, 0], 'baseOrientation': [0, 0, 0, 1]}
             self.__setattr__(component, RigidObject(component, vis_params, col_params, body_params))
         self._max_width = 0.08

@@ -5,5 +5,55 @@
     {
         "max_width": 0.08,
         "depth": 0.10327
+    },
+    "tray":
+    {
+        "height": 0.384,
+        "width": 0.384,
+        "depth": 0.1,
+        "theta": 45,
+        "thickness": 0.01
+    },
+    "camera":
+    {
+        "width": 640,
+        "height": 480,
+        "fov": 57,
+        "fov_error": 3,
+        "eye_position": [0, 0, 0.67],
+        "target_position": [0, 0, 0],
+        "up_vector": [-1, 0, 0],
+        "near_val": 0.105,
+        "far_val": 10,
+        "x_min": -0.192,
+        "x_max": 0.192,
+        "y_min": -0.192,
+        "y_max": 0.192,
+        "z_min": 0.5,
+        "z_max": 0.7
+    },
+    "scene":
+    {
+        "obj": 20,
+        "trial": 20,
+        "normal_threshold": 0.707,
+        "frame": 20,
+        "wait": 10,
+        "pose_sampling": "sphere"
+    },
+    "pose_range":
+    {
+        "x_min": -0.15,
+        "x_max": 0.15,
+        "y_min": -0.15,
+        "y_max": 0.15,
+        "z_min": 0.37,
+        "z_max": 0.4,
+        "alpha_min": -2.0,
+        "alpha_max": 2.0,
+        "beta_min": -2.0,
+        "beta_max": 2.0,
+        "gamma_min": -2.0,
+        "gamma_max": 2.0
     }
 }

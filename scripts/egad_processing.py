@@ -37,6 +37,9 @@ def main(args):
         ms.apply_filter('normalize_vertex_normals')
         ms.apply_filter('remove_duplicate_vertices')
         ms.apply_filter('remove_duplicate_faces')
+        # ms.save_current_mesh(os.path.join(args.output, obj_name))
+        ms.apply_filter('simplification_quadric_edge_collapse_decimation')
+        ms.apply_filter('simplification_quadric_edge_collapse_decimation')
         ms.save_current_mesh(os.path.join(args.output, obj_name))
 
 
