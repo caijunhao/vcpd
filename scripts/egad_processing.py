@@ -1,4 +1,6 @@
 from functools import reduce
+from xml.etree import ElementTree as et
+from xml.dom import minidom
 import numpy as np
 import pymeshlab as ml
 import trimesh
@@ -15,7 +17,11 @@ def main(args):
     ms = ml.MeshSet()
     for obj_name in os.listdir(os.path.join(args.mesh_path)):
         print(obj_name)
-        ms.load_new_mesh(os.path.join(args.mesh_path, obj_name))
+        obj_name = obj_name[:-4]
+        obj_path = os.path.join(args.output, obj_name)
+        if not os.path.exists(obj_path):
+            os.makedirs(obj_path)
+        ms.load_new_mesh(os.path.join(args.mesh_path, obj_name+'.obj'))
         # ms.apply_filter('transform_align_to_principal_axis')
         ms.apply_filter('transform_translate_center_set_origin', traslmethod=2)
         ms.apply_filter('transform_scale_normalize', axisx=0.1)
@@ -37,10 +43,65 @@ def main(args):
         ms.apply_filter('normalize_vertex_normals')
         ms.apply_filter('remove_duplicate_vertices')
         ms.apply_filter('remove_duplicate_faces')
-        # ms.save_current_mesh(os.path.join(args.output, obj_name))
+        ms.save_current_mesh(os.path.join(obj_path, obj_name+'.obj'))
         ms.apply_filter('simplification_quadric_edge_collapse_decimation')
         ms.apply_filter('simplification_quadric_edge_collapse_decimation')
-        ms.save_current_mesh(os.path.join(args.output, obj_name))
+        ms.save_current_mesh(os.path.join(obj_path, obj_name+'_col.obj'))
+        ms.save_current_mesh(os.path.join(obj_path, obj_name+'_vis.obj'))
+        gm = ms.apply_filter('compute_geometric_measures')
+        robot = et.Element('robot')
+        robot.set('name', obj_name)
+        link = et.SubElement(robot, 'link')
+        link.set('name', obj_name)
+        contact = et.SubElement(link, 'contact')
+        lateral_friction = et.SubElement(contact, 'lateral_friction')
+        lateral_friction.set('value', '1.0')
+        rolling_friction = et.SubElement(contact, 'rolling_friction')
+        rolling_friction.set('value', '1.0')
+        inertia_scaling = et.SubElement(contact, 'inertia_scaling')
+        inertia_scaling.set('value', '3.0')
+        contact_cdm = et.SubElement(contact, 'contact_cdm')
+        contact_cdm.set('value', '0.0')
+        contact_erp = et.SubElement(contact, 'contact_erp')
+        contact_erp.set('value', '1.0')
+        inertial = et.SubElement(link, 'inertial')
+        origin = et.SubElement(inertial, 'origin')
+        origin.set('rpy', '0 0 0')
+        origin.set('xyz', '0 0 0')
+        mass = et.SubElement(inertial, 'mass')
+        bbox_volume = ms.current_mesh().bounding_box().dim_x() * ms.current_mesh().bounding_box().dim_y() * ms.current_mesh().bounding_box().dim_z()
+        mass.set('value', '{}'.format(bbox_volume * 137))
+        inertia = et.SubElement(inertial, 'inertia')
+        inertia.set('ixx', '0')
+        inertia.set('ixy', '0')
+        inertia.set('ixz', '0')
+        inertia.set('iyy', '0')
+        inertia.set('iyz', '0')
+        inertia.set('izz', '0')
+        visual = et.SubElement(link, 'visual')
+        origin = et.SubElement(visual, 'origin')
+        origin.set('rpy', '0 0 0')
+        origin.set('xyz', '0 0 0')
+        geometry = et.SubElement(visual, 'geometry')
+        mesh = et.SubElement(geometry, 'mesh')
+        mesh.set('filename', obj_name+'_vis.obj')
+        mesh.set('scale', '1.0 1.0 1.0')
+        material = et.SubElement(visual, 'material')
+        material.set('name', 'blockmat')
+        color = et.SubElement(material, 'color')
+        color.set('rgba', '1.0 1.0 1.0 1.0')
+        collision = et.SubElement(link, 'collision')
+        origin = et.SubElement(collision, 'origin')
+        origin.set('rpy', '0 0 0')
+        origin.set('xyz', '0 0 0')
+        geometry = et.SubElement(collision, 'geometry')
+        mesh = et.SubElement(geometry, 'mesh')
+        mesh.set('filename', obj_name + '_col.obj')
+        mesh.set('scale', '1.0 1.0 1.0')
+
+        xml_str = minidom.parseString(et.tostring(robot)).toprettyxml(indent='  ')
+        with open(os.path.join(obj_path, obj_name+'.urdf'), 'w') as f:
+            f.write(xml_str)
 
 
 def compute_patch_normal(mesh, orders_of_neigh=1):

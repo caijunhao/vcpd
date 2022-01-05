@@ -43,23 +43,29 @@ def main(args):
         static_list = list()
         p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
         for j in range(cfg['scene']['obj']):
-            mesh_name = np.random.choice(mesh_list)[:-4]  # remove .obj
+            mesh_name = np.random.choice(mesh_list)
             if mesh_name not in info_dict:
                 with open(os.path.join(args.info, mesh_name+'_info.json'), 'r') as f:
                     keys = json.load(f)['keys']
                 info_dict[mesh_name] = {k: np.load(os.path.join(args.info, mesh_name+'_'+k+'.npy')) for k in keys}
             print('loading {} into pybullet...'.format(mesh_name))
             vis_params, col_params, body_params = get_multi_body_template()
-            vis_params['fileName'] = os.path.join(args.mesh+'_col', mesh_name+'.obj')
-            col_params['fileName'] = os.path.join(args.mesh+'_col', mesh_name+'.obj')
+            vis_params['fileName'] = os.path.join(args.mesh, mesh_name, mesh_name+'_vis.obj')
+            col_params['fileName'] = os.path.join(args.mesh, mesh_name, mesh_name+'_col.obj')
             pos, quat = np.array([1 - 0.5 * j, 1, 0.1]), np.array([0, 0, 0, 1])
             body_params['basePosition'], body_params['baseOrientation'] = pos, quat
             body_params['baseMass'] = 1.0
-            # mesh = trimesh.load_mesh(os.path.join(args.mesh, mesh_name+'.obj'))
-            dynamic_list.append(RigidObject(mesh_name, vis_params, col_params, body_params))
+            dynamic_list.append(RigidObject(mesh_name,
+                                            vis_params=vis_params,
+                                            col_params=col_params,
+                                            body_params=body_params))
+            # dynamic_list.append(RigidObject(mesh_name, urdf_path=os.path.join(args.mesh, mesh_name, mesh_name+'.urdf')))
             body_params['baseMass'] = 0
             body_params['basePosition'] = np.array([1 - 0.5 * j, 2, 0.1])
-            static_list.append(RigidObject(mesh_name, vis_params, col_params, body_params))
+            static_list.append(RigidObject(mesh_name,
+                                           vis_params=vis_params,
+                                           col_params=col_params,
+                                           body_params=body_params))
             static_list[-1].change_color()
         p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
         place_order = np.arange(cfg['scene']['obj'])
@@ -171,6 +177,6 @@ if __name__ == '__main__':
                         help='path to the save the rendered data')
     parser.add_argument('--gui',
                         type=int,
-                        default=0,
+                        default=1,
                         help='choose 0 for DIRECT mode and 1 (or others) for GUI mode.')
     main(parser.parse_args())

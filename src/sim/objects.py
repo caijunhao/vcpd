@@ -6,7 +6,7 @@ import os
 
 
 class RigidObject(object):
-    def __init__(self, obj_name, vis_params, col_params, body_params):
+    def __init__(self, obj_name, **kwargs):
         """
         Construct a rigid object for pybullet.
         :param obj_name: a string of object name.
@@ -15,10 +15,16 @@ class RigidObject(object):
         :param body_params: parameters of p.createMultiBody.
         """
         self.obj_name = obj_name
-        self.vis_id = p.createVisualShape(**vis_params)
-        self.col_id = p.createCollisionShape(**col_params)
-        self.obj_id = p.createMultiBody(baseCollisionShapeIndex=self.col_id,
-                                        baseVisualShapeIndex=self.vis_id, **body_params)
+        keys = kwargs.keys()
+        if 'vis_params' in keys and 'col_params' in keys and 'body_params' in keys:
+            vis_params, col_params, body_params = kwargs['vis_params'], kwargs['col_params'], kwargs['body_params']
+            self.obj_id = p.createMultiBody(baseCollisionShapeIndex=p.createCollisionShape(**col_params),
+                                            baseVisualShapeIndex=p.createVisualShape(**vis_params),
+                                            **body_params)
+        elif 'urdf_path' in keys:
+            self.obj_id = p.loadURDF(kwargs['urdf_path'])
+        else:
+            raise ValueError('Invalid arguments for RigidObject initialization.')
 
     def change_dynamics(self, *args, **kwargs):
         p.changeDynamics(self.obj_id, -1, *args, **kwargs)
@@ -70,7 +76,10 @@ class PandaGripper(object):
             vis_params = {'shapeType': p.GEOM_MESH, 'fileName': vis_path, 'meshScale': [1] * 3}
             col_params = {'shapeType': p.GEOM_MESH, 'fileName': col_path, 'meshScale': [1] * 3}
             body_params = {'baseMass': 0, 'basePosition': [0, 0, 0], 'baseOrientation': [0, 0, 0, 1]}
-            self.__setattr__(component, RigidObject(component, vis_params, col_params, body_params))
+            self.__setattr__(component, RigidObject(component,
+                                                    vis_params=vis_params,
+                                                    col_params=col_params,
+                                                    body_params=body_params))
         self._max_width = 0.08
         self._curr_width = 0.08
 
