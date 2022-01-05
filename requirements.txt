@@ -1,0 +1,8 @@
+pybullet
+torch
+scikit-image
+matplotlib
+scipy
+trimesh
+pymeshlab
+numpy
