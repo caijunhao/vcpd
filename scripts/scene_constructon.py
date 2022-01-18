@@ -36,7 +36,7 @@ def main(args):
     exemption = tray.get_tray_ids()
     mesh_list = os.listdir(args.mesh)
     angles = np.arange(cfg['num_angle']) / cfg['num_angle'] * 2 * np.pi
-    basic_rot_mats = np.expand_dims(basic_rot_mat(angles, 'x'), axis=0)  # 1*num_angle*3*3
+    basic_rot_mats = np.expand_dims(basic_rot_mat(angles, 'y'), axis=0)  # 1*num_angle*3*3
     for i in range(cfg['scene']['trial']):
         info_dict = dict()
         dynamic_list = list()

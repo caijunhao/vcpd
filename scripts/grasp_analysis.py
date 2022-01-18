@@ -25,12 +25,12 @@ def main(args):
     np.random.shuffle(obj_list)
     for obj_name in obj_list:
         print(obj_name)
-        obj_path = os.path.join(args.mesh_path, obj_name)
+        obj_path = os.path.join(args.mesh_path, obj_name, obj_name+'.obj')
         mesh = trimesh.load(obj_path)
         vis_params = {'shapeType': p.GEOM_MESH, 'fileName': obj_path, 'meshScale': [1]*3}
         col_params = {'shapeType': p.GEOM_MESH, 'fileName': obj_path, 'meshScale': [1]*3}
         body_params = {'baseMass': 0, 'basePosition': [0, 0, 0], 'baseOrientation': [0, 0, 0, 1]}
-        obj = RigidObject(obj_name[:-4], vis_params, col_params, body_params)
+        obj = RigidObject(obj_name, vis_params=vis_params, col_params=col_params, body_params=body_params)
         mean_edge_distance = np.mean(np.linalg.norm(mesh.vertices[mesh.edges[:, 0]] - mesh.vertices[mesh.edges[:, 1]], axis=1))
         num_vertices = mesh.vertices.shape[0]
         # vertex index, direction, intersect face index, intersect vertex, center, antipodal raw, mean, min
@@ -120,14 +120,14 @@ def main(args):
                 quats[..., -1] = 1
                 for j in range(num_intersects):
                     if min_score[j] >= cfg['th_min']:
-                        x = directions[j]
-                        y = np.random.rand(3)
-                        y = y - y @ directions[j] * directions[j]
-                        y = y / np.linalg.norm(y)
+                        y = directions[j]
+                        x = np.random.rand(3)
+                        x = x - x @ y * y
+                        x = x / np.linalg.norm(x)
                         z = np.cross(x, y)
                         base = np.stack([x, y, z], axis=1)
                         angles = np.arange(cfg['num_angle']) / cfg['num_angle'] * np.pi * 2
-                        delta_rots = basic_rot_mat(angles, axis='x')
+                        delta_rots = basic_rot_mat(angles, axis='y')
                         rots = np.matmul(base.reshape((1, 3, 3)), delta_rots)
                         quat = Rotation.from_matrix(rots).as_quat()
                         for angle_idx in range(cfg['num_angle']):
@@ -171,7 +171,7 @@ def main(args):
         print('# poses: {}'.format(num_pairs * cfg['num_angle']))
         print('# col-free poses: {}'.format(num_col_free_poses))
         print('graspable ratio: {}'.format(num_col_free_poses / (num_pairs * cfg['num_angle'])))
-        with open(os.path.join(args.output, '{}_info.json'.format(obj_name[:-4])), 'w') as f:
+        with open(os.path.join(args.output, '{}_info.json'.format(obj_name)), 'w') as f:
             d = {'num_pairs': int(num_pairs),
                  'num_graspable_pairs': int(num_graspable_pairs),
                  'num_poses': int(num_pairs * cfg['num_angle']),
@@ -179,7 +179,7 @@ def main(args):
                  'graspable_ratio': float(num_col_free_poses / (num_pairs * cfg['num_angle']))}
             json.dump(d, f, indent=4)
         for k, v in grasp_info.items():
-            np.save(os.path.join(args.output, '{}_{}.npy'.format(obj_name[:-4], k)), v)
+            np.save(os.path.join(args.output, '{}_{}.npy'.format(obj_name, k)), v)
         p.removeBody(obj.obj_id)
         del obj
 

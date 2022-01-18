@@ -96,11 +96,11 @@ class PandaGripper(object):
         #     width = self._max_width
         width = min(0.08, max(0.0, width))
         left_delta = np.eye(4)
-        left_delta[0, 3] = -(width - self._curr_width) / 2
+        left_delta[1, 3] = (width - self._curr_width) / 2
         left_pose = self.left_finger.transform @ left_delta
         self.left_finger.set_pose(left_pose[0:3, 3], Rotation.from_matrix(left_pose[0:3, 0:3]).as_quat())
         right_delta = np.eye(4)
-        right_delta[0, 3] = (width - self._curr_width) / 2
+        right_delta[1, 3] = -(width - self._curr_width) / 2
         right_pose = self.right_finger.transform @ right_delta
         self.right_finger.set_pose(right_pose[0:3, 3], Rotation.from_matrix(right_pose[0:3, 0:3]).as_quat())
         self._curr_width = width
