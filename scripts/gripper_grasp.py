@@ -1,18 +1,3 @@
-"""
-Copyright (c) 2020, NVIDIA CORPORATION. All rights reserved.
-
-NVIDIA CORPORATION and its licensors retain all intellectual property
-and proprietary rights in and to this software, related documentation
-and any modifications thereto. Any use, reproduction, disclosure or
-distribution of this software and related documentation without an express
-license agreement from NVIDIA CORPORATION is strictly prohibited.
-
-panda Cube Pick
-----------------
-Use Jacobian matrix and inverse kinematics control of panda robot to pick up a obj.
-Damped Least Squares method from: https://www.math.ucsd.edu/~sbuss/ResearchWeb/ikmethods/iksurvey.pdf
-"""
-
 from isaacgym import gymapi
 from isaacgym import gymutil
 from isaacgym import gymtorch
@@ -24,9 +9,6 @@ import torch
 from utils import *
 from scipy.spatial.transform import Rotation as R
 import os
-import random
-import time
-
 
 def load_panda(sim, num_envs, device):
     asset_root = "../../assets"
@@ -123,7 +105,6 @@ def get_obj_pos(origin_grasp_center, origin_gripper_rot,origin_gripper_pos,
     else:
         gripper_rot = gripper_quat
 
-    # obj_rot = origin_obj_rot @ np.linalg.inv(origin_gripper_rot) @ gripper_rot
     obj_rot = np.linalg.inv(origin_gripper_rot) @ gripper_rot @ origin_obj_rot
 
     # compute transform in origin loaded frames where
@@ -168,7 +149,6 @@ def get_obj_pos(origin_grasp_center, origin_gripper_rot,origin_gripper_pos,
     final_obj_pos = np.where(invalid, invalid_obj_pos, obj_pos)
     final_obj_quat = np.where(invalid, invalid_obj_quat, obj_quat)
     return final_obj_pos, final_obj_quat
-
 
 def sim_grasp(file, cnt, spilt_info, obj_infos, args, sim_params, device):
         if not spilt_info['memory']:
@@ -313,14 +293,12 @@ def sim_grasp(file, cnt, spilt_info, obj_infos, args, sim_params, device):
             gym.viewer_camera_look_at(viewer, middle_env, cam_pos, cam_target)
 
         # ==== prepare tensors =====
-        # from now on, we will use the tensor API that can run on CPU or GPU
         gym.prepare_sim(sim)
 
         # get dof state tensor
         _dof_states = gym.acquire_dof_state_tensor(sim)
         dof_states = gymtorch.wrap_tensor(_dof_states)
         dof_pos = dof_states[:, 0].view(num_envs, 2, 1)
-        # dof_vel = dof_states[:, 1].view(num_envs, 2, 1)
 
         # Set action tensors
         pos_action = torch.zeros_like(dof_pos).squeeze(-1)
@@ -330,11 +308,10 @@ def sim_grasp(file, cnt, spilt_info, obj_infos, args, sim_params, device):
         _root_tensor = gym.acquire_actor_root_state_tensor(sim)
         root_tensor = gymtorch.wrap_tensor(_root_tensor)
 
-
         event = 0
-        c = close = 120
-        s = shake = 10
-        w = wait = 20
+        c = 120 # close gripper
+        s = 10  # shake gripper
+        w = 20  # wait for stable
         init_obj_pos = None
         while True:
 
@@ -342,8 +319,8 @@ def sim_grasp(file, cnt, spilt_info, obj_infos, args, sim_params, device):
 
             # get real-time poses of actors
             obj_pos = root_tensor[obj_root_idxs,:3]
-            hand_pos = root_tensor[hand_root_idxs,:3]
-            hand_quat = root_tensor[hand_root_idxs,3:7]
+            # hand_pos = root_tensor[hand_root_idxs,:3]
+            # hand_quat = root_tensor[hand_root_idxs,3:7]
             '''
             event= :
             1 : get init obj pos
@@ -423,31 +400,16 @@ def sim_grasp(file, cnt, spilt_info, obj_infos, args, sim_params, device):
             event += 1
             gym.step_graphics(sim)
             if not args.headless:
-                # render the viewer
                 gym.draw_viewer(viewer, sim, True)
-
-                # Wait for dt to elapse in real time to sync viewer with
-                # simulation rate. Not necessary in headless.
                 gym.sync_frame_time(sim)
-
-                # Check for exit condition - user closed the viewer window
                 if gym.query_viewer_has_closed(viewer):
                     break
-        # cleanup
 
         print('{}, {} grasps, {}success, {:.2f}%---------------'.format(file[:-5],
                                                                         num_envs, success, 100*success/num_envs))
         if not args.headless:
             gym.destroy_viewer(viewer)
         gym.destroy_sim(sim)
-        # a=1
-        # b=1
-        # c=1
-        # del default_dof_pos_tensor, sim, dof_states, dof_pos, \
-        #     pos_action, effort_action, root_tensor, obj_pos, \
-        #     hand_pos, hand_quat, actor_indices, rigid_obj, \
-        #     _dof_states, _root_tensor
-        time.sleep(0.5)
         del _dof_states, _root_tensor, init_obj_pos
         torch.cuda.empty_cache()
         return record_info, spilt_info, obj_infos
@@ -470,8 +432,11 @@ custom_parameters = [{"name": "--headless", 'type': bool, "default": True, "help
                      {"name": "--obj_info_path", 'type':str,
                       "default":"/home/sujc/code/vcpd-master/data/train/train_grasp_info",
                       "help": "object grasp info path"},
-                     {"name": "--obj_names_path", 'type': str,
+                     {"name": "--obj_names_file", 'type': str,
                       "default": "/home/sujc/code/vcpd-master/data/train/obj_name.txt",
+                      "help": "path to a list of all object names in the dataset"},
+                     {"name": "--output_path", 'type': str,
+                      "default": "/home/sujc/code/vcpd-master/data/train/gym_test_2",
                       "help": "path to a list of all object names in the dataset"},
                      {"name": "--mode", 'type':str, "default":"train", "help": "train or eval"},
                      {"name": "--gpu", 'type':int, "default":2, "help": "gpu device"},
@@ -487,10 +452,7 @@ args = gymutil.parse_arguments(
     custom_parameters=custom_parameters,
 )
 device = 'cuda:%s' % args.gpu
-obj_files = get_obj_file(args.obj_names_path)
-
-# set torch device
-# device = args.sim_device if args.use_gpu_pipeline else 'cpu'
+obj_files = get_obj_file(args.obj_names_file)
 
 asset_dir = args.obj_asset_dir
 info_path = args.obj_info_path
@@ -551,13 +513,6 @@ while cnt < len(obj_files):
         file = obj_files[cnt]
     else:
         file = obj_files[args.obj_idx]
-    # with Pool(1) as p:
-        # func = partial(sim_grasp, file, cnt, spilt_info, obj_infos, args, sim_params)
-        # result = p.map(func, [device])
-        # record_info, spilt_info, obj_infos = result[0][0], result[0][1], result[0][2]
-        # data = [(file, cnt, spilt_info, obj_infos, args, sim_params, device)]
-        # result = p.map(job,data)
-        # p.terminate()
 
     record_info, spilt_info, obj_infos = sim_grasp(file, cnt, spilt_info, obj_infos, args, sim_params, device)
     suc_index[record_info['key']] += record_info['success']
@@ -571,7 +526,7 @@ while cnt < len(obj_files):
         if not args.obj_idx == -1:
             break
 if not args.obj_idx == -1:
-    file_ = open('/home/sujc/code/vcpd-master/data/train/gym_test_2/%s.txt'%file[:-5], 'w')
+    file_ = open(args.output_path+'/%s.txt'%file[:-5], 'w')
     for value in [grasps_cum, success_cum]:
          file_.write(str(value))
          file_.write('\n')
