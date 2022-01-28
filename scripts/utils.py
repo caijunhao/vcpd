@@ -37,8 +37,10 @@ def get_grasp_pose(obj_name,
         width = widths[i]
         quaternion = quaternions[i]
         score = scores[i]
-        if score < 0.95:
+        if score < 0.99:
             continue
+        # if len(positions)>500:
+        #     break
         for j in range(grasp_ids.shape[0]):
             grasp_id = grasp_ids[j]
             quat = quaternion[grasp_id]
@@ -146,3 +148,17 @@ def control_osc(dpose, device="cuda:0"):
     u_null = mm @ u_null
     u += (torch.eye(7, device=device).unsqueeze(0) - torch.transpose(j_eef, 1, 2) @ j_eef_inv) @ u_null
     return u.squeeze(-1)
+
+
+def get_obj_file(path):
+    '''
+    example:
+    file -> obj_name: 'A00_0.urdf' -> A00_0; 'C2.urdf' -> C2
+    '''
+    obj_files = []
+    file= open(path,"r")
+    for line in file.readlines():
+        line = line.strip('\n')
+        obj_files.append(line)
+    file.close()
+    return obj_files
