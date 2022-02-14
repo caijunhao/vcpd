@@ -176,7 +176,8 @@ def main(args):
                  'num_graspable_pairs': int(num_graspable_pairs),
                  'num_poses': int(num_pairs * cfg['num_angle']),
                  'num_col-free_poses': int(num_col_free_poses),
-                 'graspable_ratio': float(num_col_free_poses / (num_pairs * cfg['num_angle']))}
+                 'graspable_ratio': float(num_col_free_poses / (num_pairs * cfg['num_angle'])),
+                 'keys': list(grasp_info.keys())}
             json.dump(d, f, indent=4)
         for k, v in grasp_info.items():
             np.save(os.path.join(args.output, '{}_{}.npy'.format(obj_name, k)), v)
