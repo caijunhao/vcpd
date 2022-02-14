@@ -45,13 +45,13 @@ def main(args):
         for j in range(cfg['scene']['obj']):
             mesh_name = np.random.choice(mesh_list)
             if mesh_name not in info_dict:
-                with open(os.path.join(args.info, mesh_name+'_info.json'), 'r') as f:
+                with open(os.path.join(args.info, mesh_name + '_info.json'), 'r') as f:
                     keys = json.load(f)['keys']
-                info_dict[mesh_name] = {k: np.load(os.path.join(args.info, mesh_name+'_'+k+'.npy')) for k in keys}
+                info_dict[mesh_name] = {k: np.load(os.path.join(args.info, mesh_name + '_' + k + '.npy')) for k in keys}
             print('loading {} into pybullet...'.format(mesh_name))
             vis_params, col_params, body_params = get_multi_body_template()
-            vis_params['fileName'] = os.path.join(args.mesh, mesh_name, mesh_name+'_vis.obj')
-            col_params['fileName'] = os.path.join(args.mesh, mesh_name, mesh_name+'_col.obj')
+            vis_params['fileName'] = os.path.join(args.mesh, mesh_name, mesh_name + '_vis.obj')
+            col_params['fileName'] = os.path.join(args.mesh, mesh_name, mesh_name + '_col.obj')
             pos, quat = np.array([1 - 0.5 * j, 1, 0.1]), np.array([0, 0, 0, 1])
             body_params['basePosition'], body_params['baseOrientation'] = pos, quat
             body_params['baseMass'] = 1.0
@@ -87,9 +87,9 @@ def main(args):
             stable = dynamic_list[0].is_stable() & dynamic_list[-1].is_stable()
             curr_wait += 1
         print('scene stable, start generating data.')
-        name_list = np.array([o.obj_name for o in dynamic_list])
         poses = np.zeros((cfg['scene']['obj'], 7))
-        col_free_list = list()
+        contact_pts1 = list()
+        contact_pts2 = list()
         for j in place_order:
             pos, quat = dynamic_list[j].get_pose()
             dynamic_list[j].set_pose(np.array([1 - 0.5 * j, 1, 0.1]), np.array([0, 0, 0, 1]))
@@ -100,27 +100,42 @@ def main(args):
         for o in static_list:
             pose = o.transform
             col_flag = np.logical_not(info_dict[o.obj_name]['collisions'])
-            # col_flag = np.sum(cols, axis=1).astype(bool)
-            col_free = col_flag[col_flag]
+            candidate_flag = np.logical_not(col_flag[col_flag])
             bases0 = np.expand_dims(Rotation.from_quat(info_dict[o.obj_name]['quaternions']).as_matrix(),
                                     axis=1)  # n*1*3*3
             rots0 = np.matmul(bases0, basic_rot_mats)[col_flag]
-            centers0 = np.stack([info_dict[o.obj_name]['centers']]*cfg['num_angle'], axis=1)[col_flag]
-            w0 = np.stack([info_dict[o.obj_name]['widths']]*cfg['num_angle'], axis=1)[col_flag]
+            centers0 = np.stack([info_dict[o.obj_name]['centers']] * cfg['num_angle'], axis=1)[col_flag]
+            intersects0 = np.stack([info_dict[o.obj_name]['intersects']] * cfg['num_angle'], axis=1)[col_flag]
+            w0 = np.stack([info_dict[o.obj_name]['widths']] * cfg['num_angle'], axis=1)[col_flag]
             rots = np.matmul(pose[0:3, 0:3].reshape(1, 3, 3), rots0)
             quats = Rotation.from_matrix(rots).as_quat()
             centers = centers0 @ pose[0:3, 0:3].T + pose[0:3, 3].reshape(1, 3)
+            intersects = intersects0 @ pose[0:3, 0:3].T + pose[0:3, 3].reshape(1, 3)
+            contacts = centers + (centers - intersects)
+            indices = np.stack([np.arange(col_flag.shape[0])] * cfg['num_angle'], axis=1)[col_flag]
             z_axes = rots[..., :, 2]
             z_flag = z_axes[..., 2] < 0
+            curr_idx = -1
             for k in np.arange(z_flag.shape[0])[z_flag]:
+                if indices[k] == curr_idx:
+                    continue
                 pos = centers[k] - z_axes[k] * cfg['gripper']['depth']
                 pg.set_pose(pos, quats[k])
-                pg.set_gripper_width(w0[k]+0.02)
-                col_free[k] = not pg.is_collided(exemption)
-            col_free_list.append(col_free)
+                pg.set_gripper_width(w0[k] + 0.02)
+                collide = pg.is_collided(exemption)
+                if not collide:
+                    print(collide)
+                candidate_flag[k] = not pg.is_collided(exemption)
+                curr_idx = indices[k] if candidate_flag[k] else curr_idx
+            contacts1 = contacts[candidate_flag]
+            contacts2 = intersects[candidate_flag]
+            contact_pts1.append(contacts1)
+            contact_pts2.append(contacts2)
+        contact_pts1 = np.concatenate(contact_pts1, axis=0)
+        contact_pts2 = np.concatenate(contact_pts2, axis=0)
         pg.set_pose([-2, -2, -2], [0, 0, 0, 1])
         e = time.time()
-        print('elapse time on collision checking: {}s'.format(e-b))
+        print('elapse time on collision checking: {}s'.format(e - b))
         cam.set_pose(cfg['camera']['eye_position'], cfg['camera']['target_position'], cfg['camera']['up_vector'])
         scene_path = os.path.join(args.output, '{:06d}'.format(i))
         os.makedirs(scene_path, exist_ok=True)
@@ -130,7 +145,8 @@ def main(args):
             rgb, depth, mask = cam.get_camera_image()
             # noise_depth = camera.add_noise(depth)
             io.imsave(os.path.join(scene_path, '{:04d}_rgb.png'.format(j)), rgb, check_contrast=False)
-            io.imsave(os.path.join(scene_path, '{:04d}_encoded_depth.png'.format(j)), cam.encode_depth(depth), check_contrast=False)
+            io.imsave(os.path.join(scene_path, '{:04d}_encoded_depth.png'.format(j)), cam.encode_depth(depth),
+                      check_contrast=False)
             # plt.imsave(os.path.join(scene_path, '{:04d}_depth.png'.format(j)), depth)
             # io.imsave(os.path.join(scene_path, '{:04d}_mask.png'.format(k)), mask, check_contrast=False)
             np.save(os.path.join(scene_path, '{:04d}_pos&quat.npy'.format(j)), np.concatenate(cam.get_pose()))
@@ -148,9 +164,8 @@ def main(args):
 
         e = time.time()
         print('elapse time on scene rendering: {}s'.format(e - b))
-        np.save(os.path.join(scene_path, 'mesh_names.npy'), np.array(name_list))
-        np.save(os.path.join(scene_path, 'col_free_flags.npy'), np.array(col_free_list, dtype=object))
-        np.save(os.path.join(scene_path, 'obj_poses.npy'), poses)
+        np.save(os.path.join(scene_path, 'contact1.npy'), contact_pts1)
+        np.save(os.path.join(scene_path, 'contact2.npy'), contact_pts2)
         p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
         [p.removeBody(o.obj_id) for o in dynamic_list]
         [p.removeBody(o.obj_id) for o in static_list]
