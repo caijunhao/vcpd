@@ -58,3 +58,11 @@ def basic_rot_mat(angles, axis):
 def step_simulation(num_steps):
     for i in range(num_steps):
         p.stepSimulation()
+
+
+def add_sphere(pos, radius=0.002):
+    obj_id = p.createMultiBody(0,
+                               p.createCollisionShape(p.GEOM_SPHERE, radius),
+                               p.createVisualShape(p.GEOM_SPHERE, radius),
+                               basePosition=pos)
+    return obj_id

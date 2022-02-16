@@ -1,31 +1,40 @@
-from sim.utils import get_multi_body_template, sample_a_pose, step_simulation, basic_rot_mat
+from sim.utils import *
 from sim.objects import PandaGripper, RigidObject
 from sim.camera import Camera
 from sim.tray import Tray
+from sdf import TSDF
 from scipy.spatial.transform import Rotation
 from skimage import io
 import matplotlib.pyplot as plt
 import pybullet as p
 import pybullet_data
 import numpy as np
+import torch
 import trimesh
 import argparse
 import json
 import time
 import os
 
+torch.set_default_dtype(torch.float32)
+tf32 = torch.float32
+nf32 = np.float32
+
 
 def main(args):
-    if not os.path.exists(args.output):
-        os.makedirs(args.output)
+    os.environ['CUDA_VISIBLE_DEVICES'] = args.cuda_device
+    if not os.path.exists(args.scene):
+        os.makedirs(args.scene)
+    with open(args.config, 'r') as config_file:
+        cfg = json.load(config_file)
+    # PyBullet initialization
     mode = p.GUI if args.gui else p.DIRECT
     p.connect(mode)
     p.setGravity(0, 0, -9.8)
     p.configureDebugVisualizer(p.COV_ENABLE_GUI, 0)
     p.setAdditionalSearchPath(pybullet_data.getDataPath())
     plane_id = p.loadURDF('plane.urdf')
-    with open(args.config, 'r') as config_file:
-        cfg = json.load(config_file)
+    # scene initialization
     tray = Tray(**cfg['tray'])
     tray.set_pose([-1, -1, -1])
     cfg['tray']['height'], cfg['tray']['width'], cfg['tray']['theta'] = 0.324, 0.324, 80
@@ -37,6 +46,14 @@ def main(args):
     mesh_list = os.listdir(args.mesh)
     angles = np.arange(cfg['num_angle']) / cfg['num_angle'] * 2 * np.pi
     basic_rot_mats = np.expand_dims(basic_rot_mat(angles, 'y'), axis=0)  # 1*num_angle*3*3
+    # tsdf initialization
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    vol_bnd = np.array([cfg['sdf']['x_min'], cfg['sdf']['x_max'],
+                        cfg['sdf']['y_min'], cfg['sdf']['y_max'],
+                        cfg['sdf']['z_min'], cfg['sdf']['z_max']], dtype=nf32).reshape(3, 2)
+    res = cfg['sdf']['resolution']
+    tsdf = TSDF(vol_bnd, res, rgb=False, device=device)
+    vol_bnd = tsdf.vol_bnd
     for i in range(cfg['scene']['trial']):
         info_dict = dict()
         dynamic_list = list()
@@ -88,8 +105,7 @@ def main(args):
             curr_wait += 1
         print('scene stable, start generating data.')
         poses = np.zeros((cfg['scene']['obj'], 7))
-        contact_pts1 = list()
-        contact_pts2 = list()
+        contact_pts1, contact_pts2, neg_pts1, neg_pts2 = list(), list(), list(), list()
         for j in place_order:
             pos, quat = dynamic_list[j].get_pose()
             dynamic_list[j].set_pose(np.array([1 - 0.5 * j, 1, 0.1]), np.array([0, 0, 0, 1]))
@@ -122,27 +138,47 @@ def main(args):
                 pos = centers[k] - z_axes[k] * cfg['gripper']['depth']
                 pg.set_pose(pos, quats[k])
                 pg.set_gripper_width(w0[k] + 0.02)
-                collide = pg.is_collided(exemption)
-                if not collide:
-                    print(collide)
                 candidate_flag[k] = not pg.is_collided(exemption)
                 curr_idx = indices[k] if candidate_flag[k] else curr_idx
             contacts1 = contacts[candidate_flag]
             contacts2 = intersects[candidate_flag]
+            # p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
+            # for ci in range(contacts1.shape[0]):
+            #     add_sphere(contacts1[ci])
+            #     add_sphere(contacts2[ci])
+            # p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
             contact_pts1.append(contacts1)
             contact_pts2.append(contacts2)
-        contact_pts1 = np.concatenate(contact_pts1, axis=0)
-        contact_pts2 = np.concatenate(contact_pts2, axis=0)
+            # retrieve negative contact points
+            neg_flag = np.sum(info_dict[o.obj_name]['collisions'], axis=1) == cfg['num_angle']
+            neg_intersects0 = info_dict[o.obj_name]['intersects'][neg_flag]
+            neg_centers0 = info_dict[o.obj_name]['centers'][neg_flag]
+            neg_intersects = neg_intersects0 @ pose[0:3, 0:3].T + pose[0:3, 3].reshape(1, 3)
+            neg_centers = neg_centers0 @ pose[0:3, 0:3].T + pose[0:3, 3].reshape(1, 3)
+            neg_directions = neg_centers - neg_intersects
+            neg_contacts = neg_centers + neg_directions
+            neg_directions = neg_directions / np.linalg.norm(neg_directions, axis=1, keepdims=True)
+            direction_flag = np.abs(neg_directions[:, 2]) <= np.cos(cfg['scene']['normal_threshold'])
+            neg_contacts1 = neg_contacts[direction_flag]
+            neg_contacts2 = neg_intersects[direction_flag]
+            neg_pts1.append(neg_contacts1)
+            neg_pts2.append(neg_contacts2)
+        contact_pts1 = np.concatenate(contact_pts1, axis=0).astype(np.float32)
+        contact_pts2 = np.concatenate(contact_pts2, axis=0).astype(np.float32)
+        neg_pts1 = np.concatenate(neg_pts1, axis=0).astype(np.float32)
+        neg_pts2 = np.concatenate(neg_pts2, axis=0).astype(np.float32)
         pg.set_pose([-2, -2, -2], [0, 0, 0, 1])
         e = time.time()
         print('elapse time on collision checking: {}s'.format(e - b))
         cam.set_pose(cfg['camera']['eye_position'], cfg['camera']['target_position'], cfg['camera']['up_vector'])
-        scene_path = os.path.join(args.output, '{:06d}'.format(i))
+        scene_path = os.path.join(args.scene, '{:06d}'.format(i))
         os.makedirs(scene_path, exist_ok=True)
         print('render scene images...')
+        rgb_list, depth_list, pose_list, intr_list = list(), list(), list(), list()
         b = time.time()
         for j in range(cfg['scene']['frame']):
             rgb, depth, mask = cam.get_camera_image()
+            rgb_list.append(rgb), depth_list.append(depth), pose_list.append(cam.pose), intr_list.append(cam.intrinsic)
             # noise_depth = camera.add_noise(depth)
             io.imsave(os.path.join(scene_path, '{:04d}_rgb.png'.format(j)), rgb, check_contrast=False)
             io.imsave(os.path.join(scene_path, '{:04d}_encoded_depth.png'.format(j)), cam.encode_depth(depth),
@@ -161,11 +197,39 @@ def main(args):
                                       cfg['camera']['up_vector'])
             else:
                 raise ValueError('only sphere or cube sampling methods are supported')
-
         e = time.time()
         print('elapse time on scene rendering: {}s'.format(e - b))
-        np.save(os.path.join(scene_path, 'contact1.npy'), contact_pts1)
-        np.save(os.path.join(scene_path, 'contact2.npy'), contact_pts2)
+        # tsdf generation
+        for ri, di, pi, ii, idx in zip(rgb_list, depth_list, pose_list, intr_list, range(len(intr_list))):
+            sdf_path = os.path.join(args.sdf, '{:06d}'.format(i))
+            os.makedirs(sdf_path) if not os.path.exists(sdf_path) else None
+            ri = ri[..., 0:3].astype(np.float32)
+            di = cam.add_noise(di).astype(np.float32)
+            pi, ii = pi.astype(np.float32), ii.astype(np.float32)
+            tsdf.tsdf_integrate(di, ii, pi, rgb=ri)
+            if idx in cfg['sdf']['save_volume']:
+                sdf_cp1, sdf_cp2 = tsdf.extract_sdf(contact_pts1), tsdf.extract_sdf(contact_pts2)
+                sdf_cp_flag = np.logical_and(np.abs(sdf_cp1) <= 0.2, np.abs(sdf_cp2) <= 0.2)
+                contact_pts1, contact_pts2 = contact_pts1[sdf_cp_flag], contact_pts2[sdf_cp_flag]
+                sdf_ncp1, sdf_ncp2 = tsdf.extract_sdf(neg_pts1), tsdf.extract_sdf(neg_pts2)
+                sdf_ncp_flag = np.logical_and(np.abs(sdf_ncp1) <= 0.2, np.abs(sdf_ncp2) <= 0.2)
+                neg_pts1, neg_pts2 = neg_pts1[sdf_ncp_flag], neg_pts2[sdf_ncp_flag]
+                num_cp = contact_pts1.shape[0]
+                num_ncp = neg_pts1.shape[0]
+                selected_ids = np.random.choice(np.arange(num_ncp), num_cp, replace=num_ncp < num_cp)
+                neg_pts1, neg_pts2 = neg_pts1[selected_ids], neg_pts2[selected_ids]
+                if cfg['sdf']['gaussian_blur']:
+                    sdf_vol = tsdf.gaussian_blur(tsdf.post_processed_volume)
+                else:
+                    sdf_vol = tsdf.post_processed_volume
+                sdf_vol_cpu = sdf_vol.cpu().numpy()
+                tsdf.write_mesh(os.path.join(sdf_path, '{:.3f}_{:04d}_mesh.ply'.format(cfg['sdf']['resolution'], idx)),
+                                *tsdf.compute_mesh(step_size=3))
+                np.save(os.path.join(sdf_path, '{:04d}_contact1.npy'.format(idx)), tsdf.get_ids(contact_pts1))
+                np.save(os.path.join(sdf_path, '{:04d}_contact2.npy'.format(idx)), tsdf.get_ids(contact_pts2))
+                np.save(os.path.join(sdf_path, '{:04d}_neg_contact1.npy'.format(idx)), tsdf.get_ids(neg_pts1))
+                np.save(os.path.join(sdf_path, '{:04d}_neg_contact2.npy'.format(idx)), tsdf.get_ids(neg_pts2))
+                np.save(os.path.join(sdf_path, '{:.3f}_{:04d}_sdf_volume.npy'.format(res, idx)), sdf_vol_cpu)
         p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
         [p.removeBody(o.obj_id) for o in dynamic_list]
         [p.removeBody(o.obj_id) for o in static_list]
@@ -186,12 +250,20 @@ if __name__ == '__main__':
                         type=str,
                         required=True,
                         help='path to the grasp info folder')
-    parser.add_argument('--output',
+    parser.add_argument('--scene',
                         type=str,
                         required=True,
                         help='path to the save the rendered data')
+    parser.add_argument('--sdf',
+                        type=str,
+                        required=True,
+                        help='path to the save the sdf data')
     parser.add_argument('--gui',
                         type=int,
-                        default=1,
+                        default=0,
                         help='choose 0 for DIRECT mode and 1 (or others) for GUI mode.')
+    parser.add_argument('--cuda_device',
+                        default='0',
+                        type=str,
+                        help='id of nvidia device.')
     main(parser.parse_args())

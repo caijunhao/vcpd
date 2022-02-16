@@ -1,4 +1,4 @@
-from torch.nn.functional import conv3d
+from torch.nn.functional import conv3d, grid_sample
 from skimage import measure
 import numpy as np
 import torch
@@ -38,9 +38,9 @@ class SDF(object):
             self.rgb_volume = self.rgb_volume * (255 * 256 ** 2 + 255 * 256 + 255)
 
         # get voxel coordinates and world positions
-        vx, vy, vz = torch.meshgrid(torch.arange(self.vol_dims[0]).tolist(),
-                                    torch.arange(self.vol_dims[1]).tolist(),
-                                    torch.arange(self.vol_dims[2]).tolist())
+        vx, vy, vz = torch.meshgrid(torch.arange(self.vol_dims[0]),
+                                    torch.arange(self.vol_dims[1]),
+                                    torch.arange(self.vol_dims[2]))
         self.voxel_coords = torch.stack([vx, vy, vz], dim=-1).to(device)
         self.world_pos = self.origin + self.voxel_coords * self.res
         self.sdf_info()
@@ -169,6 +169,32 @@ class SDF(object):
         e = time.time()
         print('elapse time for marching cubes: {:06f}s'.format(e - b))
         return v, f, n, rgb
+
+    def extract_sdf(self, pos, post_processed=True, mode='bilinear', padding_mode='border'):
+        if isinstance(pos, np.ndarray):
+            pos = torch.from_numpy(pos).to(self.dev)
+        num_pos = pos.shape[0]
+        pos = torch.transpose(pos, 1, 0).view(1, 3, num_pos, 1)
+        res = torch.tensor(self.res).to(self.dev).view(1, 1, 1, 1)
+        ids = (pos - self.origin.view(1, 3, 1, 1)) / res
+        sdf_vol = self.post_processed_volume if post_processed else self.sdf_vol
+        h, w, d = sdf_vol.shape
+        sdf_vol = sdf_vol.view(1, 1, h, w, d)
+        size = torch.from_numpy(np.array([d - 1, w - 1, h - 1], dtype=np.float32).reshape((1, 1, 1, 1, 3))).to(
+            self.dev)
+        indices = torch.unsqueeze(ids.permute(0, 2, 3, 1), dim=3)  # B*N*1*1*3
+        indices = torch.stack([indices[..., 2], indices[..., 1], indices[..., 0]], dim=-1)
+        grid = indices / size * 2 - 1  # [-1, 1]
+        output = grid_sample(sdf_vol, grid, mode=mode, padding_mode=padding_mode, align_corners=True)
+        output = torch.squeeze(output)
+        return output.cpu().numpy()
+
+    def get_ids(self, pos):
+        if isinstance(pos, np.ndarray):
+            pos = torch.from_numpy(pos).to(self.dev)
+        res = torch.tensor(self.res).to(self.dev)
+        ids = (pos - self.origin) / res
+        return ids.cpu().numpy()
 
     def sdf_info(self):
         print('volume bounds: ')
