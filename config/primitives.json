@@ -1,0 +1,119 @@
+{
+    "cube#1": {
+        "x": 0.02,
+        "y": 0.02,
+        "z": 0.02,
+        "stride_x": 0.01,
+        "stride_y": 0.01,
+        "stride_z": 0.01,
+        "num_stride": 6,
+        "description": "cubes"
+    },
+    "cube#2": {
+        "x": 0.02,
+        "y": 0.05,
+        "z": 0.08,
+        "stride_x": 0.01,
+        "stride_y": 0.025,
+        "stride_z": 0.04,
+        "num_stride": 5,
+        "description": "rectangle boxes"
+    },
+    "cube#3": {
+        "x": 0.021,
+        "y": 0.021,
+        "z": 0.084,
+        "stride_x": 0.001,
+        "stride_y": 0.001,
+        "stride_z": 0.004,
+        "num_stride": 40,
+        "description": "strips"
+    },
+    "cube#4": {
+        "x": 0.01,
+        "y": 0.01,
+        "z": 0.08,
+        "stride_x": 0.001,
+        "stride_y": 0.001,
+        "stride_z": 0.01,
+        "num_stride": 10,
+        "description": "thin strips"
+    },
+    "sphere#": {
+        "x": 0.03,
+        "y": 0.03,
+        "z": 0.03,
+        "stride_x": 0.001,
+        "stride_y": 0.001,
+        "stride_z": 0.001,
+        "num_stride": 30,
+        "description": "spheres"
+    },
+    "sphere#2": {
+        "x": 0.03,
+        "y": 0.03,
+        "z": 0.03,
+        "stride_x": 0.0,
+        "stride_y": 0.0,
+        "stride_z": 0.03,
+        "num_stride": 5,
+        "description": "ellipsoids"
+    },
+    "sphere#3": {
+        "x": 0.03,
+        "y": 0.03,
+        "z": 0.03,
+        "stride_x": 0.001,
+        "stride_y": 0.001,
+        "stride_z": 0.007,
+        "num_stride": 20,
+        "description": "ellipsoids"
+    },
+    "cylinder#0": {
+        "x": 0.01,
+        "y": 0.01,
+        "z": 0.06,
+        "stride_x": 0.001,
+        "stride_y": 0.001,
+        "stride_z": 0.01,
+        "num_stride": 10,
+        "description": "thin cylinders"
+    },
+    "cylinder#1": {
+        "x": 0.03,
+        "y": 0.03,
+        "z": 0.04,
+        "stride_x": 0.0,
+        "stride_y": 0.0,
+        "stride_z": 0.01,
+        "num_stride": 20,
+        "description": "regular cylinders"
+    },
+    "cylinder#2": {
+        "x": 0.04,
+        "y": 0.04,
+        "z": 0.04,
+        "stride_x": 0.0,
+        "stride_y": 0.0,
+        "stride_z": 0.01,
+        "num_stride": 20
+    },
+    "cylinder#3": {
+        "x": 0.05,
+        "y": 0.05,
+        "z": 0.04,
+        "stride_x": 0.0,
+        "stride_y": 0.0,
+        "stride_z": 0.01,
+        "num_stride": 20
+    },
+    "cylinder#4": {
+        "x": 0.06,
+        "y": 0.06,
+        "z": 0.04,
+        "stride_x": 0.0,
+        "stride_y": 0.0,
+        "stride_z": 0.01,
+        "num_stride": 20
+    }
+}

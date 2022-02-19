@@ -1,6 +1,6 @@
 {
     "num_angle": 64,
-    "th_min": 0.9698463103929541,
+    "th_min": 0.93,
     "gripper":
     {
         "max_width": 0.08,
@@ -35,7 +35,7 @@
     "scene":
     {
         "obj": 20,
-        "trial": 20,
+        "trial": 100,
         "normal_threshold": 0.707,
         "frame": 20,
         "wait": 10,

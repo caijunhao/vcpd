@@ -117,14 +117,22 @@ def main(args):
             pose = o.transform
             col_flag = np.logical_not(info_dict[o.obj_name]['collisions'])
             candidate_flag = np.logical_not(col_flag[col_flag])
-            bases0 = np.expand_dims(Rotation.from_quat(info_dict[o.obj_name]['quaternions']).as_matrix(),
-                                    axis=1)  # n*1*3*3
+            try:
+                bases0 = np.expand_dims(Rotation.from_quat(info_dict[o.obj_name]['quaternions']).as_matrix(),
+                                        axis=1)  # n*1*3*3
+            except ValueError:
+                print(1)
+                pass
             rots0 = np.matmul(bases0, basic_rot_mats)[col_flag]
             centers0 = np.stack([info_dict[o.obj_name]['centers']] * cfg['num_angle'], axis=1)[col_flag]
             intersects0 = np.stack([info_dict[o.obj_name]['intersects']] * cfg['num_angle'], axis=1)[col_flag]
             w0 = np.stack([info_dict[o.obj_name]['widths']] * cfg['num_angle'], axis=1)[col_flag]
             rots = np.matmul(pose[0:3, 0:3].reshape(1, 3, 3), rots0)
-            quats = Rotation.from_matrix(rots).as_quat()
+            try:
+                quats = Rotation.from_matrix(rots).as_quat()
+            except ValueError:
+                print(1)
+                pass
             centers = centers0 @ pose[0:3, 0:3].T + pose[0:3, 3].reshape(1, 3)
             intersects = intersects0 @ pose[0:3, 0:3].T + pose[0:3, 3].reshape(1, 3)
             contacts = centers + (centers - intersects)
@@ -142,11 +150,6 @@ def main(args):
                 curr_idx = indices[k] if candidate_flag[k] else curr_idx
             contacts1 = contacts[candidate_flag]
             contacts2 = intersects[candidate_flag]
-            # p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
-            # for ci in range(contacts1.shape[0]):
-            #     add_sphere(contacts1[ci])
-            #     add_sphere(contacts2[ci])
-            # p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
             contact_pts1.append(contacts1)
             contact_pts2.append(contacts2)
             # retrieve negative contact points
@@ -157,6 +160,10 @@ def main(args):
             neg_centers = neg_centers0 @ pose[0:3, 0:3].T + pose[0:3, 3].reshape(1, 3)
             neg_directions = neg_centers - neg_intersects
             neg_contacts = neg_centers + neg_directions
+            # remove zero norm and normalize direction vector
+            neg_norms = np.linalg.norm(neg_directions, axis=1, keepdims=True)
+            neg_directions[:, 2][neg_norms[:, 0] == 0] = 1
+            neg_norms[:, 0][neg_norms[:, 0] == 0] = 1
             neg_directions = neg_directions / np.linalg.norm(neg_directions, axis=1, keepdims=True)
             direction_flag = np.abs(neg_directions[:, 2]) <= np.cos(cfg['scene']['normal_threshold'])
             neg_contacts1 = neg_contacts[direction_flag]

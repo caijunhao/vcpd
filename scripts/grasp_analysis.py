@@ -6,6 +6,7 @@ import pybullet as p
 import numpy as np
 import trimesh
 import time
+import shutil
 import json
 import os
 
@@ -92,6 +93,8 @@ def main(args):
             if np.any(intersect_flag):
                 selected_faces, selected_ids = np.unique(vertex_faces[intersect_flag], return_index=True)
                 selected_intersects = intersects[intersect_flag][selected_ids]
+                selected_ids = np.unique(np.sum(selected_intersects*1e4, axis=1).astype(int), return_index=True)[1]
+                selected_faces, selected_intersects = selected_faces[selected_ids], selected_intersects[selected_ids]
                 num_intersects = selected_intersects.shape[0]
                 widths = np.linalg.norm((vertex.reshape(1, 3) - selected_intersects), axis=1)
                 # width_flag = widths < max_width
@@ -121,15 +124,17 @@ def main(args):
                 for j in range(num_intersects):
                     if min_score[j] >= cfg['th_min']:
                         y = directions[j]
-                        x = np.random.rand(3)
-                        x = x - x @ y * y
-                        x = x / np.linalg.norm(x)
+                        mat, _, _ = np.linalg.svd(y.reshape(3, 1))
+                        x = mat[:, 1]
                         z = np.cross(x, y)
                         base = np.stack([x, y, z], axis=1)
                         angles = np.arange(cfg['num_angle']) / cfg['num_angle'] * np.pi * 2
                         delta_rots = basic_rot_mat(angles, axis='y')
                         rots = np.matmul(base.reshape((1, 3, 3)), delta_rots)
                         quat = Rotation.from_matrix(rots).as_quat()
+                        if np.sum(np.sum(np.abs(quat), axis=1) == 0) > 0:
+                            print(1)
+                            pass
                         for angle_idx in range(cfg['num_angle']):
                             pos = centers[j].copy() - rots[angle_idx, :, 2] * cfg['gripper']['depth']
                             pg.set_pose(pos, quat[angle_idx])
@@ -171,6 +176,10 @@ def main(args):
         print('# poses: {}'.format(num_pairs * cfg['num_angle']))
         print('# col-free poses: {}'.format(num_col_free_poses))
         print('graspable ratio: {}'.format(num_col_free_poses / (num_pairs * cfg['num_angle'])))
+        if num_col_free_poses == 0:
+            print('no graspable pair found, {} will be removed.'.format(obj_name))
+            shutil.rmtree(os.path.join(args.mesh_path, obj_name))
+            continue
         with open(os.path.join(args.output, '{}_info.json'.format(obj_name)), 'w') as f:
             d = {'num_pairs': int(num_pairs),
                  'num_graspable_pairs': int(num_graspable_pairs),
