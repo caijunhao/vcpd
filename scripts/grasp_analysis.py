@@ -163,7 +163,7 @@ def main(args):
                 grasp_info['antipodal_mean'].append(np.array([0]))
                 grasp_info['antipodal_min'].append(np.array([0]))
                 grasp_info['collisions'].append(np.ones((1, 64)))
-                grasp_info['quaternions'].append(np.zeros((1, 4)))
+                grasp_info['quaternions'].append(Rotation.from_matrix(np.eye(3)).as_quat().reshape(1, 4))
             p.removeUserDebugItem(line_id, physics_id)
             p.removeUserDebugItem(line2, physics_id)
         for k, v in grasp_info.items():
