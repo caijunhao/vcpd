@@ -23,8 +23,8 @@ nf32 = np.float32
 
 def main(args):
     os.environ['CUDA_VISIBLE_DEVICES'] = args.cuda_device
-    if not os.path.exists(args.scene):
-        os.makedirs(args.scene)
+    if not os.path.exists(args.output):
+        os.makedirs(args.output)
     with open(args.config, 'r') as config_file:
         cfg = json.load(config_file)
     # PyBullet initialization
@@ -117,22 +117,13 @@ def main(args):
             pose = o.transform
             col_flag = np.logical_not(info_dict[o.obj_name]['collisions'])
             candidate_flag = np.logical_not(col_flag[col_flag])
-            try:
-                bases0 = np.expand_dims(Rotation.from_quat(info_dict[o.obj_name]['quaternions']).as_matrix(),
-                                        axis=1)  # n*1*3*3
-            except ValueError:
-                print(1)
-                pass
+            bases0 = np.expand_dims(Rotation.from_quat(info_dict[o.obj_name]['quaternions']).as_matrix(), axis=1)  # n*1*3*3
             rots0 = np.matmul(bases0, basic_rot_mats)[col_flag]
             centers0 = np.stack([info_dict[o.obj_name]['centers']] * cfg['num_angle'], axis=1)[col_flag]
             intersects0 = np.stack([info_dict[o.obj_name]['intersects']] * cfg['num_angle'], axis=1)[col_flag]
             w0 = np.stack([info_dict[o.obj_name]['widths']] * cfg['num_angle'], axis=1)[col_flag]
             rots = np.matmul(pose[0:3, 0:3].reshape(1, 3, 3), rots0)
-            try:
-                quats = Rotation.from_matrix(rots).as_quat()
-            except ValueError:
-                print(1)
-                pass
+            quats = Rotation.from_matrix(rots).as_quat()
             centers = centers0 @ pose[0:3, 0:3].T + pose[0:3, 3].reshape(1, 3)
             intersects = intersects0 @ pose[0:3, 0:3].T + pose[0:3, 3].reshape(1, 3)
             contacts = centers + (centers - intersects)
@@ -172,14 +163,20 @@ def main(args):
             neg_pts2.append(neg_contacts2)
         contact_pts1 = np.concatenate(contact_pts1, axis=0).astype(np.float32)
         contact_pts2 = np.concatenate(contact_pts2, axis=0).astype(np.float32)
-        neg_pts1 = np.concatenate(neg_pts1, axis=0).astype(np.float32)
-        neg_pts2 = np.concatenate(neg_pts2, axis=0).astype(np.float32)
+        contact_ids = np.arange(contact_pts1.shape[0])
+        np.random.shuffle(contact_ids)
+        neg1_pts1 = contact_pts1.copy()
+        neg1_pts2 = contact_pts2.copy()[contact_ids]
+        neg2_pts1 = np.concatenate(neg_pts1, axis=0).astype(np.float32)
+        neg2_pts2 = np.concatenate(neg_pts2, axis=0).astype(np.float32)
+        neg_pts1 = np.concatenate([neg1_pts1, neg2_pts1], axis=0)
+        neg_pts2 = np.concatenate([neg1_pts2, neg2_pts2], axis=0)
         pg.set_pose([-2, -2, -2], [0, 0, 0, 1])
         e = time.time()
         print('elapse time on collision checking: {}s'.format(e - b))
         cam.set_pose(cfg['camera']['eye_position'], cfg['camera']['target_position'], cfg['camera']['up_vector'])
-        scene_path = os.path.join(args.scene, '{:06d}'.format(i))
-        os.makedirs(scene_path, exist_ok=True)
+        path = os.path.join(args.output, '{:06d}'.format(i))
+        os.makedirs(path, exist_ok=True)
         print('render scene images...')
         rgb_list, depth_list, pose_list, intr_list = list(), list(), list(), list()
         b = time.time()
@@ -187,13 +184,14 @@ def main(args):
             rgb, depth, mask = cam.get_camera_image()
             rgb_list.append(rgb), depth_list.append(depth), pose_list.append(cam.pose), intr_list.append(cam.intrinsic)
             # noise_depth = camera.add_noise(depth)
-            io.imsave(os.path.join(scene_path, '{:04d}_rgb.png'.format(j)), rgb, check_contrast=False)
-            io.imsave(os.path.join(scene_path, '{:04d}_encoded_depth.png'.format(j)), cam.encode_depth(depth),
-                      check_contrast=False)
-            # plt.imsave(os.path.join(scene_path, '{:04d}_depth.png'.format(j)), depth)
-            # io.imsave(os.path.join(scene_path, '{:04d}_mask.png'.format(k)), mask, check_contrast=False)
-            np.save(os.path.join(scene_path, '{:04d}_pos&quat.npy'.format(j)), np.concatenate(cam.get_pose()))
-            np.save(os.path.join(scene_path, '{:04d}_intrinsic.npy'.format(j)), cam.intrinsic)
+            if args.scene:
+                io.imsave(os.path.join(path, '{:04d}_rgb.png'.format(j)), rgb, check_contrast=False)
+                io.imsave(os.path.join(path, '{:04d}_encoded_depth.png'.format(j)), cam.encode_depth(depth),
+                          check_contrast=False)
+                # plt.imsave(os.path.join(scene_path, '{:04d}_depth.png'.format(j)), depth)
+                # io.imsave(os.path.join(scene_path, '{:04d}_mask.png'.format(k)), mask, check_contrast=False)
+                np.save(os.path.join(path, '{:04d}_pos&quat.npy'.format(j)), np.concatenate(cam.get_pose()))
+                np.save(os.path.join(path, '{:04d}_intrinsic.npy'.format(j)), cam.intrinsic)
             if cfg['scene']['pose_sampling'] == 'sphere':
                 cam.sample_a_pose_from_a_sphere(np.array(cfg['camera']['target_position']),
                                                 cfg['camera']['eye_position'][-1])
@@ -207,40 +205,45 @@ def main(args):
         e = time.time()
         print('elapse time on scene rendering: {}s'.format(e - b))
         # tsdf generation
-        for ri, di, pi, ii, idx in zip(rgb_list, depth_list, pose_list, intr_list, range(len(intr_list))):
-            sdf_path = os.path.join(args.sdf, '{:06d}'.format(i))
-            os.makedirs(sdf_path) if not os.path.exists(sdf_path) else None
-            ri = ri[..., 0:3].astype(np.float32)
-            di = cam.add_noise(di).astype(np.float32)
-            pi, ii = pi.astype(np.float32), ii.astype(np.float32)
-            tsdf.tsdf_integrate(di, ii, pi, rgb=ri)
-            if idx in cfg['sdf']['save_volume']:
-                sdf_cp1, sdf_cp2 = tsdf.extract_sdf(contact_pts1), tsdf.extract_sdf(contact_pts2)
-                sdf_cp_flag = np.logical_and(np.abs(sdf_cp1) <= 0.2, np.abs(sdf_cp2) <= 0.2)
-                contact_pts1, contact_pts2 = contact_pts1[sdf_cp_flag], contact_pts2[sdf_cp_flag]
-                sdf_ncp1, sdf_ncp2 = tsdf.extract_sdf(neg_pts1), tsdf.extract_sdf(neg_pts2)
-                sdf_ncp_flag = np.logical_and(np.abs(sdf_ncp1) <= 0.2, np.abs(sdf_ncp2) <= 0.2)
-                neg_pts1, neg_pts2 = neg_pts1[sdf_ncp_flag], neg_pts2[sdf_ncp_flag]
-                num_cp = contact_pts1.shape[0]
-                num_ncp = neg_pts1.shape[0]
-                selected_ids = np.random.choice(np.arange(num_ncp), num_cp, replace=num_ncp < num_cp)
-                neg_pts1, neg_pts2 = neg_pts1[selected_ids], neg_pts2[selected_ids]
-                if cfg['sdf']['gaussian_blur']:
-                    sdf_vol = tsdf.gaussian_blur(tsdf.post_processed_volume)
-                else:
-                    sdf_vol = tsdf.post_processed_volume
-                sdf_vol_cpu = sdf_vol.cpu().numpy()
-                tsdf.write_mesh(os.path.join(sdf_path, '{:.3f}_{:04d}_mesh.ply'.format(cfg['sdf']['resolution'], idx)),
-                                *tsdf.compute_mesh(step_size=3))
-                np.save(os.path.join(sdf_path, '{:04d}_contact1.npy'.format(idx)), tsdf.get_ids(contact_pts1))
-                np.save(os.path.join(sdf_path, '{:04d}_contact2.npy'.format(idx)), tsdf.get_ids(contact_pts2))
-                np.save(os.path.join(sdf_path, '{:04d}_neg_contact1.npy'.format(idx)), tsdf.get_ids(neg_pts1))
-                np.save(os.path.join(sdf_path, '{:04d}_neg_contact2.npy'.format(idx)), tsdf.get_ids(neg_pts2))
-                np.save(os.path.join(sdf_path, '{:.3f}_{:04d}_sdf_volume.npy'.format(res, idx)), sdf_vol_cpu)
+        sdf_path = os.path.join(args.output, '{:06d}'.format(i))
+        if args.sdf:
+            for ri, di, pi, ii, idx in zip(rgb_list, depth_list, pose_list, intr_list, range(len(intr_list))):
+                os.makedirs(sdf_path) if not os.path.exists(sdf_path) else None
+                ri = ri[..., 0:3].astype(np.float32)
+                di = cam.add_noise(di).astype(np.float32)
+                pi, ii = pi.astype(np.float32), ii.astype(np.float32)
+                tsdf.tsdf_integrate(di, ii, pi, rgb=ri)
+                if idx in cfg['sdf']['save_volume']:
+                    sdf_cp1, sdf_cp2 = tsdf.extract_sdf(contact_pts1), tsdf.extract_sdf(contact_pts2)
+                    sdf_cp_flag = np.logical_and(np.abs(sdf_cp1) <= 0.2, np.abs(sdf_cp2) <= 0.2)
+                    val_pts1, val_pts2 = contact_pts1[sdf_cp_flag], contact_pts2[sdf_cp_flag]
+                    sdf_ncp1, sdf_ncp2 = tsdf.extract_sdf(neg_pts1), tsdf.extract_sdf(neg_pts2)
+                    sdf_ncp_flag = np.logical_and(np.abs(sdf_ncp1) <= 0.2, np.abs(sdf_ncp2) <= 0.2)
+                    val_n_pts1, val_n_pts2 = neg_pts1[sdf_ncp_flag], neg_pts2[sdf_ncp_flag]
+                    num_cp = val_pts1.shape[0]
+                    num_ncp = val_n_pts1.shape[0]
+                    selected_ids = np.random.choice(np.arange(num_ncp), num_cp, replace=num_ncp < num_cp)
+                    print('num_cp: {} | num_ncp: {}'.format(num_cp, min(num_cp, num_ncp)))
+                    val_n_pts1, val_n_pts2 = val_n_pts1[selected_ids], val_n_pts2[selected_ids]
+                    if cfg['sdf']['gaussian_blur']:
+                        sdf_vol = tsdf.gaussian_blur(tsdf.post_processed_volume)
+                    else:
+                        sdf_vol = tsdf.post_processed_volume
+                    sdf_vol_cpu = sdf_vol.cpu().numpy()
+                    # tsdf.write_mesh(os.path.join(sdf_path, '{:.3f}_{:04d}_mesh.ply'.format(cfg['sdf']['resolution'], idx)),
+                    #                 *tsdf.compute_mesh(step_size=3))
+                    np.save(os.path.join(sdf_path, '{:04d}_contact1.npy'.format(idx)), tsdf.get_ids(val_pts1))
+                    np.save(os.path.join(sdf_path, '{:04d}_contact2.npy'.format(idx)), tsdf.get_ids(val_pts2))
+                    np.save(os.path.join(sdf_path, '{:04d}_neg_contact1.npy'.format(idx)), tsdf.get_ids(val_n_pts1))
+                    np.save(os.path.join(sdf_path, '{:04d}_neg_contact2.npy'.format(idx)), tsdf.get_ids(val_n_pts2))
+                    np.save(os.path.join(sdf_path, '{:.3f}_{:04d}_sdf_volume.npy'.format(res, idx)), sdf_vol_cpu)
         p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
         [p.removeBody(o.obj_id) for o in dynamic_list]
         [p.removeBody(o.obj_id) for o in static_list]
         p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
+        tsdf.write_mesh(os.path.join(sdf_path, '{:06d}_mesh.ply'.format(i)),
+                        *tsdf.compute_mesh(step_size=3))
+        tsdf.reset()
 
 
 if __name__ == '__main__':
@@ -257,20 +260,24 @@ if __name__ == '__main__':
                         type=str,
                         required=True,
                         help='path to the grasp info folder')
-    parser.add_argument('--scene',
+    parser.add_argument('--output',
                         type=str,
                         required=True,
                         help='path to the save the rendered data')
+    parser.add_argument('--scene',
+                        type=int,
+                        default=0,
+                        help='whether to save scene data')
     parser.add_argument('--sdf',
-                        type=str,
-                        required=True,
-                        help='path to the save the sdf data')
+                        type=int,
+                        default=1,
+                        help='whether to save sdf data')
     parser.add_argument('--gui',
                         type=int,
                         default=0,
                         help='choose 0 for DIRECT mode and 1 (or others) for GUI mode.')
     parser.add_argument('--cuda_device',
-                        default='0',
+                        default='1',
                         type=str,
                         help='id of nvidia device.')
     main(parser.parse_args())

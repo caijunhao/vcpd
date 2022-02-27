@@ -35,7 +35,7 @@
     "scene":
     {
         "obj": 20,
-        "trial": 100,
+        "trial": 500,
         "normal_threshold": 0.707,
         "frame": 20,
         "wait": 10,
