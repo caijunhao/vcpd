@@ -6,3 +6,4 @@ scipy
 trimesh
 pymeshlab
 numpy
+tensorboard
