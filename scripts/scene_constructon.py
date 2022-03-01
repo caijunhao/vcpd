@@ -242,7 +242,7 @@ def main(args):
                     np.save(os.path.join(sdf_path, '{:04d}_pos_contact2.npy'.format(idx)), tsdf.get_ids(val_pts2))
                     np.save(os.path.join(sdf_path, '{:04d}_neg_contact1.npy'.format(idx)), tsdf.get_ids(val_n_pts1))
                     np.save(os.path.join(sdf_path, '{:04d}_neg_contact2.npy'.format(idx)), tsdf.get_ids(val_n_pts2))
-                    np.save(os.path.join(sdf_path, '{:04d}_sdf_volume.npy'.format(res, idx)), sdf_vol_cpu)
+                    np.save(os.path.join(sdf_path, '{:04d}_sdf_volume.npy'.format(idx)), sdf_vol_cpu)
         p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
         [p.removeBody(o.obj_id) for o in dynamic_list]
         [p.removeBody(o.obj_id) for o in static_list]
