@@ -68,5 +68,17 @@
         "gaussian_blur": true,
         "resolution": 0.003,
         "save_volume": [5, 10, 14, 19]
+    },
+    "train":
+    {
+        "batch_size": 2,
+        "lr": 0.001,
+        "momentum": 0.9,
+        "weight_decay": 0.0005,
+        "gamma": 0.77,
+        "antipodal": 1.0,
+        "huber": 100,
+        "scale": 0.5,
+        "num_sample": 256
     }
 }
