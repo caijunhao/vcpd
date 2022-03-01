@@ -54,7 +54,8 @@ def main(args):
     res = cfg['sdf']['resolution']
     tsdf = TSDF(vol_bnd, res, rgb=False, device=device)
     vol_bnd = tsdf.vol_bnd
-    for i in range(cfg['scene']['trial']):
+    i = 0
+    while i < cfg['scene']['trial']:
         info_dict = dict()
         dynamic_list = list()
         static_list = list()
@@ -164,7 +165,7 @@ def main(args):
         contact_pts1 = np.concatenate(contact_pts1, axis=0).astype(np.float32)
         contact_pts2 = np.concatenate(contact_pts2, axis=0).astype(np.float32)
         contact_ids = np.arange(contact_pts1.shape[0])
-        np.random.shuffle(contact_ids)
+        np.random.shuffle(contact_ids)  # randomly permute the order of right contact points to create neg samples
         neg1_pts1 = contact_pts1.copy()
         neg1_pts2 = contact_pts2.copy()[contact_ids]
         neg2_pts1 = np.concatenate(neg_pts1, axis=0).astype(np.float32)
@@ -188,8 +189,8 @@ def main(args):
                 io.imsave(os.path.join(path, '{:04d}_rgb.png'.format(j)), rgb, check_contrast=False)
                 io.imsave(os.path.join(path, '{:04d}_encoded_depth.png'.format(j)), cam.encode_depth(depth),
                           check_contrast=False)
-                # plt.imsave(os.path.join(scene_path, '{:04d}_depth.png'.format(j)), depth)
-                # io.imsave(os.path.join(scene_path, '{:04d}_mask.png'.format(k)), mask, check_contrast=False)
+                plt.imsave(os.path.join(path, '{:04d}_depth.png'.format(j)), depth)
+                io.imsave(os.path.join(path, '{:04d}_mask.png'.format(j)), mask, check_contrast=False)
                 np.save(os.path.join(path, '{:04d}_pos&quat.npy'.format(j)), np.concatenate(cam.get_pose()))
                 np.save(os.path.join(path, '{:04d}_intrinsic.npy'.format(j)), cam.intrinsic)
             if cfg['scene']['pose_sampling'] == 'sphere':
@@ -222,6 +223,9 @@ def main(args):
                     val_n_pts1, val_n_pts2 = neg_pts1[sdf_ncp_flag], neg_pts2[sdf_ncp_flag]
                     num_cp = val_pts1.shape[0]
                     num_ncp = val_n_pts1.shape[0]
+                    if num_cp == 0 or num_ncp == 0:
+                        print('no valid point was found, discard current scene')
+                        continue
                     selected_ids = np.random.choice(np.arange(num_ncp), num_cp, replace=num_ncp < num_cp)
                     print('num_cp: {} | num_ncp: {}'.format(num_cp, min(num_cp, num_ncp)))
                     val_n_pts1, val_n_pts2 = val_n_pts1[selected_ids], val_n_pts2[selected_ids]
@@ -230,10 +234,8 @@ def main(args):
                     else:
                         sdf_vol = tsdf.post_processed_volume
                     sdf_vol_cpu = sdf_vol.cpu().numpy()
-                    # tsdf.write_mesh(os.path.join(sdf_path, '{:.3f}_{:04d}_mesh.ply'.format(cfg['sdf']['resolution'], idx)),
-                    #                 *tsdf.compute_mesh(step_size=3))
-                    np.save(os.path.join(sdf_path, '{:04d}_contact1.npy'.format(idx)), tsdf.get_ids(val_pts1))
-                    np.save(os.path.join(sdf_path, '{:04d}_contact2.npy'.format(idx)), tsdf.get_ids(val_pts2))
+                    np.save(os.path.join(sdf_path, '{:04d}_pos_contact1.npy'.format(idx)), tsdf.get_ids(val_pts1))
+                    np.save(os.path.join(sdf_path, '{:04d}_pos_contact2.npy'.format(idx)), tsdf.get_ids(val_pts2))
                     np.save(os.path.join(sdf_path, '{:04d}_neg_contact1.npy'.format(idx)), tsdf.get_ids(val_n_pts1))
                     np.save(os.path.join(sdf_path, '{:04d}_neg_contact2.npy'.format(idx)), tsdf.get_ids(val_n_pts2))
                     np.save(os.path.join(sdf_path, '{:.3f}_{:04d}_sdf_volume.npy'.format(res, idx)), sdf_vol_cpu)
@@ -244,6 +246,7 @@ def main(args):
         tsdf.write_mesh(os.path.join(sdf_path, '{:06d}_mesh.ply'.format(i)),
                         *tsdf.compute_mesh(step_size=3))
         tsdf.reset()
+        i += 1
 
 
 if __name__ == '__main__':
