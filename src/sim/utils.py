@@ -66,3 +66,17 @@ def add_sphere(pos, radius=0.002):
                                p.createVisualShape(p.GEOM_SPHERE, radius),
                                basePosition=pos)
     return obj_id
+
+
+def check_valid_pts(pts, bounds):
+    """
+    check if the given points are inside the boundaries or not.
+    :param pts: an Nx3-d numpy array representing the 3-d points.
+    :param bounds: a 2x3-d numpy array representing the boundaries of the volume.
+    :return: an N-d numpy array representing if the points are inside the given boundaries or not.
+    """
+    flag_x = np.logical_and(pts[:, 0] >= bounds[0, 0], pts[:, 0] <= bounds[1, 0])
+    flag_y = np.logical_and(pts[:, 1] >= bounds[0, 1], pts[:, 1] <= bounds[1, 1])
+    flag_z = np.logical_and(pts[:, 2] >= bounds[0, 2], pts[:, 2] <= bounds[1, 2])
+    flag = flag_x * flag_y * flag_z
+    return flag

@@ -164,6 +164,8 @@ def main(args):
             neg_pts2.append(neg_contacts2)
         contact_pts1 = np.concatenate(contact_pts1, axis=0).astype(np.float32)
         contact_pts2 = np.concatenate(contact_pts2, axis=0).astype(np.float32)
+        flag = check_valid_pts(contact_pts1, vol_bnd.T) * check_valid_pts(contact_pts2, vol_bnd.T)
+        contact_pts1, contact_pts2 = contact_pts1[flag], contact_pts2[flag]
         contact_ids = np.arange(contact_pts1.shape[0])
         np.random.shuffle(contact_ids)  # randomly permute the order of right contact points to create neg samples
         neg1_pts1 = contact_pts1.copy()
@@ -172,6 +174,8 @@ def main(args):
         neg2_pts2 = np.concatenate(neg_pts2, axis=0).astype(np.float32)
         neg_pts1 = np.concatenate([neg1_pts1, neg2_pts1], axis=0)
         neg_pts2 = np.concatenate([neg1_pts2, neg2_pts2], axis=0)
+        flag = check_valid_pts(neg_pts1, vol_bnd.T) * check_valid_pts(neg_pts2, vol_bnd.T)
+        neg_pts1, neg_pts2 = neg_pts1[flag], neg_pts2[flag]
         pg.set_pose([-2, -2, -2], [0, 0, 0, 1])
         e = time.time()
         print('elapse time on collision checking: {}s'.format(e - b))
