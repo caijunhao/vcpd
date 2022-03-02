@@ -34,8 +34,8 @@
     },
     "scene":
     {
-        "obj": 20,
-        "trial": 500,
+        "obj": 5,
+        "trial": 7,
         "normal_threshold": 0.707,
         "frame": 20,
         "wait": 10,
@@ -71,7 +71,7 @@
     },
     "train":
     {
-        "batch_size": 2,
+        "batch_size": 24,
         "lr": 0.001,
         "momentum": 0.9,
         "weight_decay": 0.0005,
