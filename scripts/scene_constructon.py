@@ -12,6 +12,7 @@ import numpy as np
 import torch
 import trimesh
 import argparse
+import shutil
 import json
 import time
 import os
@@ -212,6 +213,7 @@ def main(args):
         # tsdf generation
         sdf_path = os.path.join(args.output, '{:06d}'.format(i))
         if args.sdf:
+            invalid = False
             for ri, di, pi, ii, idx in zip(rgb_list, depth_list, pose_list, intr_list, range(len(intr_list))):
                 os.makedirs(sdf_path) if not os.path.exists(sdf_path) else None
                 ri = ri[..., 0:3].astype(np.float32)
@@ -229,7 +231,9 @@ def main(args):
                     num_ncp = val_n_pts1.shape[0]
                     if num_cp == 0 or num_ncp == 0:
                         print('no valid point was found, discard current scene')
-                        continue
+                        invalid = True
+                        shutil.rmtree(sdf_path)
+                        break
                     selected_ids = np.random.choice(np.arange(num_ncp), num_cp, replace=num_ncp < num_cp)
                     print('num_cp: {} | num_ncp: {}'.format(num_cp, min(num_cp, num_ncp)))
                     val_n_pts1, val_n_pts2 = val_n_pts1[selected_ids], val_n_pts2[selected_ids]
@@ -243,6 +247,8 @@ def main(args):
                     np.save(os.path.join(sdf_path, '{:04d}_neg_contact1.npy'.format(idx)), tsdf.get_ids(val_n_pts1))
                     np.save(os.path.join(sdf_path, '{:04d}_neg_contact2.npy'.format(idx)), tsdf.get_ids(val_n_pts2))
                     np.save(os.path.join(sdf_path, '{:04d}_sdf_volume.npy'.format(idx)), sdf_vol_cpu)
+            if invalid:
+                break
         p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
         [p.removeBody(o.obj_id) for o in dynamic_list]
         [p.removeBody(o.obj_id) for o in static_list]
