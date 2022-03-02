@@ -48,7 +48,7 @@ class CPNDataset(Dataset):
     def sample_pts(self, sample):
         num_pts = sample['ids_cp1'].shape[0]
         ids = np.arange(num_pts)
-        if num_pts > self.num_sample:
+        if num_pts >= self.num_sample:
             ids = np.random.choice(ids, self.num_sample, replace=False)
             sample['mask'] = np.ones(self.num_sample).reshape(-1, 1)  # N' * 1
         elif num_pts < self.num_sample:
