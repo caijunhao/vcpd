@@ -22,8 +22,8 @@ def cpn_trainer(model,
     loss_list = []
     global_step = curr_step
     # save summary around 20 times for one epoch
-    num_save_summary = round(len(train_loader.dataset) / (20 * train_loader.batch_size))
-    num_save_model = round(len(train_loader.dataset) / (3 * train_loader.batch_size))
+    num_save_summary = round(len(train_loader.dataset) / (20 * train_loader.batch_size)) + 1
+    num_save_model = round(len(train_loader.dataset) / (3 * train_loader.batch_size)) + 1
     for epoch in range(curr_epoch, num_epochs):
         torch.cuda.empty_cache()
         print('epoch: {}/{}'.format(epoch, num_epochs - 1))

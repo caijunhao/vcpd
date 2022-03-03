@@ -34,6 +34,7 @@ class CPNDataset(Dataset):
         sample['ids_cp2'] = np.concatenate([ids_pcp2, ids_ncp2], axis=0)
         sample['label'] = np.concatenate([np.ones(num_pos),
                                           np.zeros(num_neg)]).reshape(-1, 1)  # N * 1
+        sample['mask'] = np.ones_like(sample['label'])
         sample['origin'] = self.origin.reshape(-1)  # (3,)
         sample['resolution'] = np.array([self.resolution])  # (1,)
         if self.padding:
@@ -51,7 +52,7 @@ class CPNDataset(Dataset):
         if num_pts >= self.num_sample:
             ids = np.random.choice(ids, self.num_sample, replace=False)
             sample['mask'] = np.ones(self.num_sample).reshape(-1, 1)  # N' * 1
-        elif num_pts < self.num_sample:
+        else:
             complementary = np.random.choice(ids, self.num_sample-num_pts, replace=True)
             ids = np.concatenate([ids, complementary], axis=0)
             sample['mask'] = np.concatenate([np.ones(num_pts),
