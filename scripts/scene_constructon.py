@@ -2,7 +2,7 @@ from sim.utils import *
 from sim.objects import PandaGripper, RigidObject
 from sim.camera import Camera
 from sim.tray import Tray
-from sdf import TSDF
+from sdf import SDF
 from scipy.spatial.transform import Rotation
 from skimage import io
 import matplotlib.pyplot as plt
@@ -17,6 +17,7 @@ import json
 import time
 import os
 
+np.random.seed(777)
 torch.set_default_dtype(torch.float32)
 tf32 = torch.float32
 nf32 = np.float32
@@ -49,12 +50,12 @@ def main(args):
     basic_rot_mats = np.expand_dims(basic_rot_mat(angles, 'y'), axis=0)  # 1*num_angle*3*3
     # tsdf initialization
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    vol_bnd = np.array([cfg['sdf']['x_min'], cfg['sdf']['x_max'],
-                        cfg['sdf']['y_min'], cfg['sdf']['y_max'],
-                        cfg['sdf']['z_min'], cfg['sdf']['z_max']], dtype=nf32).reshape(3, 2)
-    res = cfg['sdf']['resolution']
-    tsdf = TSDF(vol_bnd, res, rgb=False, device=device)
+    vol_bnd = np.array([cfg['sdf']['x_min'], cfg['sdf']['y_min'], cfg['sdf']['z_min'],
+                        cfg['sdf']['x_max'], cfg['sdf']['y_max'], cfg['sdf']['z_max']], dtype=nf32).reshape(2, 3)
+    voxel_length = cfg['sdf']['voxel_length']
+    tsdf = SDF(vol_bnd, voxel_length, rgb=False, device=device)
     vol_bnd = tsdf.vol_bnd
+    # tsdf = TSDF(vol_bnd, voxel_length)
     i = 0
     while i < cfg['scene']['trial']:
         info_dict = dict()
@@ -165,7 +166,7 @@ def main(args):
             neg_pts2.append(neg_contacts2)
         contact_pts1 = np.concatenate(contact_pts1, axis=0).astype(np.float32)
         contact_pts2 = np.concatenate(contact_pts2, axis=0).astype(np.float32)
-        flag = check_valid_pts(contact_pts1, vol_bnd.T) * check_valid_pts(contact_pts2, vol_bnd.T)
+        flag = check_valid_pts(contact_pts1, vol_bnd) * check_valid_pts(contact_pts2, vol_bnd)
         contact_pts1, contact_pts2 = contact_pts1[flag], contact_pts2[flag]
         contact_ids = np.arange(contact_pts1.shape[0])
         np.random.shuffle(contact_ids)  # randomly permute the order of right contact points to create neg samples
@@ -175,7 +176,7 @@ def main(args):
         neg2_pts2 = np.concatenate(neg_pts2, axis=0).astype(np.float32)
         neg_pts1 = np.concatenate([neg1_pts1, neg2_pts1], axis=0)
         neg_pts2 = np.concatenate([neg1_pts2, neg2_pts2], axis=0)
-        flag = check_valid_pts(neg_pts1, vol_bnd.T) * check_valid_pts(neg_pts2, vol_bnd.T)
+        flag = check_valid_pts(neg_pts1, vol_bnd) * check_valid_pts(neg_pts2, vol_bnd)
         neg_pts1, neg_pts2 = neg_pts1[flag], neg_pts2[flag]
         pg.set_pose([-2, -2, -2], [0, 0, 0, 1])
         e = time.time()
@@ -212,28 +213,26 @@ def main(args):
         print('elapse time on scene rendering: {}s'.format(e - b))
         # tsdf generation
         sdf_path = os.path.join(args.output, '{:06d}'.format(i))
+        sdf_vols = list()
+        num_cp = num_ncp = 0
+        val_pts1, val_pts2, val_n_pts1, val_n_pts2 = None, None, None, None
         if args.sdf:
-            invalid = False
             for ri, di, pi, ii, idx in zip(rgb_list, depth_list, pose_list, intr_list, range(len(intr_list))):
                 os.makedirs(sdf_path) if not os.path.exists(sdf_path) else None
                 ri = ri[..., 0:3].astype(np.float32)
                 di = cam.add_noise(di).astype(np.float32)
                 pi, ii = pi.astype(np.float32), ii.astype(np.float32)
-                tsdf.tsdf_integrate(di, ii, pi, rgb=ri)
+                tsdf.integrate(di, ii, pi, rgb=ri)
                 if idx in cfg['sdf']['save_volume']:
                     sdf_cp1, sdf_cp2 = tsdf.extract_sdf(contact_pts1), tsdf.extract_sdf(contact_pts2)
-                    sdf_cp_flag = np.logical_and(np.abs(sdf_cp1) <= 0.2, np.abs(sdf_cp2) <= 0.2)
+                    th = 0.2
+                    sdf_cp_flag = np.logical_and(np.abs(sdf_cp1) <= th, np.abs(sdf_cp2) <= th)
                     val_pts1, val_pts2 = contact_pts1[sdf_cp_flag], contact_pts2[sdf_cp_flag]
                     sdf_ncp1, sdf_ncp2 = tsdf.extract_sdf(neg_pts1), tsdf.extract_sdf(neg_pts2)
-                    sdf_ncp_flag = np.logical_and(np.abs(sdf_ncp1) <= 0.2, np.abs(sdf_ncp2) <= 0.2)
+                    sdf_ncp_flag = np.logical_and(np.abs(sdf_ncp1) <= th, np.abs(sdf_ncp2) <= th)
                     val_n_pts1, val_n_pts2 = neg_pts1[sdf_ncp_flag], neg_pts2[sdf_ncp_flag]
                     num_cp = val_pts1.shape[0]
                     num_ncp = val_n_pts1.shape[0]
-                    if num_cp == 0 or num_ncp == 0:
-                        print('no valid point was found, discard current scene')
-                        invalid = True
-                        shutil.rmtree(sdf_path)
-                        break
                     selected_ids = np.random.choice(np.arange(num_ncp), num_cp, replace=num_ncp < num_cp)
                     print('num_cp: {} | num_ncp: {}'.format(num_cp, min(num_cp, num_ncp)))
                     val_n_pts1, val_n_pts2 = val_n_pts1[selected_ids], val_n_pts2[selected_ids]
@@ -242,20 +241,31 @@ def main(args):
                     else:
                         sdf_vol = tsdf.post_processed_volume
                     sdf_vol_cpu = sdf_vol.cpu().numpy()
-                    np.save(os.path.join(sdf_path, '{:04d}_pos_contact1.npy'.format(idx)), tsdf.get_ids(val_pts1))
-                    np.save(os.path.join(sdf_path, '{:04d}_pos_contact2.npy'.format(idx)), tsdf.get_ids(val_pts2))
-                    np.save(os.path.join(sdf_path, '{:04d}_neg_contact1.npy'.format(idx)), tsdf.get_ids(val_n_pts1))
-                    np.save(os.path.join(sdf_path, '{:04d}_neg_contact2.npy'.format(idx)), tsdf.get_ids(val_n_pts2))
-                    np.save(os.path.join(sdf_path, '{:04d}_sdf_volume.npy'.format(idx)), sdf_vol_cpu)
-            if invalid:
-                break
+                    sdf_vols.append(sdf_vol_cpu)
         p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
         [p.removeBody(o.obj_id) for o in dynamic_list]
         [p.removeBody(o.obj_id) for o in static_list]
         p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
-        tsdf.write_mesh(os.path.join(sdf_path, '{:06d}_mesh.ply'.format(i)),
-                        *tsdf.compute_mesh(step_size=3))
-        tsdf.reset()
+        if num_cp == 0 or num_ncp == 0:
+            print('no valid point was found, discard current scene')
+            shutil.rmtree(sdf_path)
+            tsdf.reset()
+            continue
+        else:
+            for k in range(len(sdf_vols)):
+                np.save(os.path.join(sdf_path, '{:04d}_pos_contact1.npy'.format(cfg['sdf']['save_volume'][k])),
+                        tsdf.get_ids(val_pts1).cpu().numpy())
+                np.save(os.path.join(sdf_path, '{:04d}_pos_contact2.npy'.format(cfg['sdf']['save_volume'][k])),
+                        tsdf.get_ids(val_pts2).cpu().numpy())
+                np.save(os.path.join(sdf_path, '{:04d}_neg_contact1.npy'.format(cfg['sdf']['save_volume'][k])),
+                        tsdf.get_ids(val_n_pts1).cpu().numpy())
+                np.save(os.path.join(sdf_path, '{:04d}_neg_contact2.npy'.format(cfg['sdf']['save_volume'][k])),
+                        tsdf.get_ids(val_n_pts2).cpu().numpy())
+                np.save(os.path.join(sdf_path, '{:04d}_sdf_volume.npy'.format(cfg['sdf']['save_volume'][k])),
+                        sdf_vols[k])
+            tsdf.write_mesh(os.path.join(sdf_path, '{:06d}_mesh.ply'.format(i)),
+                            *tsdf.compute_mesh(step_size=3))
+            tsdf.reset()
         i += 1
 
 
