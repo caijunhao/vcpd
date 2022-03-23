@@ -20,10 +20,10 @@ class CPN(nn.Module):
         self.conv23 = ConvBlock3D(64, 64, stride=1, norm=True, relu=True)
 
         self.conv30 = ConvBlock3D(64, 128, stride=2, norm=True, relu=True)
-        self.conv31 = ConvBlock3D(128, 128, stride=1, norm=True, relu=True)
-        self.conv32 = ConvBlock3D(128, 128, stride=1, norm=True, relu=True)
+        self.conv31 = ConvBlock3D(128, 256, stride=1, norm=True, relu=True)
+        self.conv32 = ConvBlock3D(256, 256, stride=1, norm=True, relu=True)
 
-        self.conv40 = ConvBlock3D(128, 64, norm=True, relu=True, upsm=True)
+        self.conv40 = ConvBlock3D(256, 64, norm=True, relu=True, upsm=True)
         self.conv41 = ConvBlock3D(64, 64, norm=True, relu=True)
 
         self.conv50 = ConvBlock3D(64+64, 32, norm=True, relu=True, upsm=True)
@@ -35,7 +35,8 @@ class CPN(nn.Module):
         self.conv70 = ConvBlock3D(16+16, 8, norm=True, relu=True, upsm=True)
         self.conv71 = ConvBlock3D(8, 8, norm=False, relu=False)
 
-        self.pnb = PointNetBlock([(64+32+16+8)*2, 128, 1], norm=False, relu=False)
+        self.pnb1 = PointNetBlock([(64+32+16+8)*2, 128, 128], norm=True, relu=True)
+        self.pnb2 = PointNetBlock([128, 128, 1], norm=False, relu=False)
 
     def forward(self, samples):
         x = samples['sdf_volume']
@@ -72,7 +73,8 @@ class CPN(nn.Module):
         features = torch.cat([ipl(x4, ids_cp1/8), ipl(x5, ids_cp1/4), ipl(x6, ids_cp1/2), ipl(x7, ids_cp1),
                               ipl(x4, ids_cp2/8), ipl(x5, ids_cp2/4), ipl(x6, ids_cp2/2), ipl(x7, ids_cp2)],
                              dim=1)
-        out = self.pnb(features)
+        x8 = self.pnb1(features)
+        out = self.pnb2(x8)
         return out
 
     def load_network_state_dict(self, device, pth_file, strict=True):
