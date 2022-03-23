@@ -23,7 +23,7 @@ def main(args):
     test_dataset = CPNDataset(args.test_dir, cfg, padding=False, shuffle=False, transform=test_transform)
     train_loader = DataLoader(train_dataset, cfg['train']['batch_size'], shuffle=True, num_workers=args.num_workers)
     test_loader = DataLoader(test_dataset, 1, shuffle=False, num_workers=args.num_workers)
-    vpn = CPN()
+    cpn = CPN()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     epoch = 0
     global_step = 0
@@ -31,12 +31,12 @@ def main(args):
         model_name, epoch, global_step = args.model_path.split('/')[-1].split('_')  # only keep file name
         epoch = int(epoch) + 1
         global_step = epoch * len(train_dataset) // cfg['train']['batch_size']
-        vpn.load_network_state_dict(device=device, pth_file=args.model_path)
+        cpn.load_network_state_dict(device=device, pth_file=args.model_path)
     loss = CPNLoss(cfg['train'])
-    optimizer = optim.Adam(vpn.parameters(), lr=cfg['train']['lr'], weight_decay=cfg['train']['weight_decay'])
+    optimizer = optim.Adam(cpn.parameters(), lr=cfg['train']['lr'], weight_decay=cfg['train']['weight_decay'])
     scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=cfg['train']['gamma'])
     writer = SummaryWriter(log_dir=args.log)
-    cpn_trainer(model=vpn,
+    cpn_trainer(model=cpn,
                 train_loader=train_loader,
                 test_loader=test_loader,
                 device=device,
