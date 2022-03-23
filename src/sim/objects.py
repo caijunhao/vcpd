@@ -2,6 +2,7 @@ from sim.utils import step_simulation
 from scipy.spatial.transform import Rotation
 import pybullet as p
 import numpy as np
+import pymeshlab as ml
 import os
 
 
@@ -70,6 +71,8 @@ class RigidObject(object):
 class PandaGripper(object):
     def __init__(self, asset_path):
         self.components = ['hand', 'left_finger', 'right_finger']
+        self.vertex_sets = dict()
+        ms = ml.MeshSet()
         for component in self.components:
             vis_path = os.path.join(asset_path, component+'.obj')
             col_path = os.path.join(asset_path, component+'_col.obj')
@@ -80,6 +83,8 @@ class PandaGripper(object):
                                                     vis_params=vis_params,
                                                     col_params=col_params,
                                                     body_params=body_params))
+            ms.load_new_mesh(col_path)
+            self.vertex_sets[component] = ms.current_mesh().vertex_matrix()
         self._max_width = 0.08
         self._curr_width = 0.08
 
@@ -89,6 +94,18 @@ class PandaGripper(object):
 
     def get_pose(self):
         return self.__getattribute__(self.components[0]).get_pose()
+
+    def get_vertices(self):
+        width = self._curr_width
+        offset = (self._max_width - width) / 2
+        pos, quat = self.get_pose()
+        rot = Rotation.from_quat(quat).as_matrix()
+        y = rot[:, 1].reshape(1, 3)
+        vertex_sets = {k: v @ rot.T + pos.reshape(1, 3) for k, v in self.vertex_sets.items()}
+        vertex_sets['left_finger'] = vertex_sets['left_finger'] - offset * y
+        vertex_sets['right_finger'] = vertex_sets['right_finger'] + offset * y
+        vertices = np.concatenate(vertex_sets.values(), axis=0)
+        return vertices
 
     def set_gripper_width(self, width):
         # if width > self._max_width:

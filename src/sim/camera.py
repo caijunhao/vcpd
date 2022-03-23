@@ -36,7 +36,7 @@ class Camera(object):
                                                               nearVal=near_val,
                                                               farVal=far_val)
 
-    def get_camera_image(self, shadow=1, get_pcl=False, add_noise=False, renderer=p.ER_TINY_RENDERER):
+    def get_camera_image(self, shadow=1, renderer=p.ER_TINY_RENDERER):
         width, height, rgb, depth, mask = p.getCameraImage(width=self.width,
                                                            height=self.height,
                                                            viewMatrix=self.view_matrix,
@@ -44,14 +44,8 @@ class Camera(object):
                                                            shadow=shadow,
                                                            renderer=renderer)
         depth = self.recover_depth_from_z_buffer(depth)
-        if add_noise:
-            depth = self.add_noise(depth)
         mask = mask.astype(np.uint16)
-        if get_pcl:
-            point_cloud = self.compute_point_cloud(depth, self.intrinsic)
-            return rgb, depth, mask, point_cloud
-        else:
-            return rgb, depth, mask
+        return rgb, depth, mask
 
     def recover_depth_from_z_buffer(self, depth):
         depth = self.far_val * self.near_val / (self.far_val - (self.far_val - self.near_val) * depth)
@@ -190,7 +184,7 @@ class Camera(object):
         :return: Point cloud in camera space.
         """
         h, w = depth.shape
-        w_map, h_map = np.meshgrid(np.arange(w), np.arange(h))
+        h_map, w_map = np.meshgrid(np.arange(h), np.arange(w), indexing='ij')
         image_coordinates = np.stack([w_map, h_map, np.ones_like(h_map, dtype=np.float32)], axis=2).astype(np.float32)
         inv_intrinsic = np.linalg.inv(intrinsic)
         camera_coordinates = np.expand_dims(depth, axis=2) * np.dot(image_coordinates, inv_intrinsic.T)

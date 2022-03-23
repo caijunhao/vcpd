@@ -34,8 +34,8 @@
     },
     "scene":
     {
-        "obj": 5,
-        "trial": 7,
+        "obj": 20,
+        "trial": 777,
         "normal_threshold": 0.707,
         "frame": 20,
         "wait": 10,
@@ -72,13 +72,19 @@
     "train":
     {
         "batch_size": 24,
-        "lr": 0.001,
+        "lr": 0.0005,
         "momentum": 0.9,
         "weight_decay": 0.0005,
         "gamma": 0.77,
         "antipodal": 1.0,
         "huber": 100,
-        "scale": 0.5,
+        "scale": 0.4,
         "num_sample": 256
+    },
+    "test":
+    {
+        "obj": 30,
+        "frame": 20,
+        "test_volume": [10, 14, 19]
     }
 }
