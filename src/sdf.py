@@ -286,11 +286,12 @@ class SDF(object):
         print('elapse time for marching cubes: {:06f}s'.format(e - b))
         return v, f, n, rgb
 
-    def extract_sdf(self, pos, post_processed=True, mode='bilinear', padding_mode='border'):
+    def extract_sdf(self, pos, post_processed=True, gaussian_blur=True, mode='bilinear', padding_mode='border'):
         """
         Extract sdf values given query positions in the volume (world) frame.
         :param pos: An Nx3-D numpy array or torch tensor representing the 3D position in the volume (world) frame.
         :param post_processed: Whether to process the sdf volume or not before extracting the sdf values.
+        :param gaussian_blur:
         :param mode: mode of interpolation.
         :param padding_mode: the way of padding mode
         :return: An N-D torch tensor representing the retrieved sdf values.
@@ -302,6 +303,8 @@ class SDF(object):
         res = torch.tensor(self.res).to(self.dev).view(1, 1, 1, 1)
         ids = (pos - self.origin.view(1, 3, 1, 1)) / res
         sdf_vol = self.post_processed_volume if post_processed else self.sdf_vol
+        if gaussian_blur:
+            sdf_vol = self.gaussian_blur(sdf_vol)
         h, w, d = sdf_vol.shape
         sdf_vol = sdf_vol.view(1, 1, h, w, d)
         size = torch.from_numpy(np.array([d - 1, w - 1, h - 1], dtype=np.float32).reshape((1, 1, 1, 1, 3))).to(
@@ -311,7 +314,7 @@ class SDF(object):
         grid = indices / size * 2 - 1  # [-1, 1]
         output = grid_sample(sdf_vol, grid, mode=mode, padding_mode=padding_mode, align_corners=True)
         output = torch.squeeze(output)
-        return output.cpu().numpy()
+        return output
 
     def get_ids(self, pos):
         if isinstance(pos, np.ndarray):

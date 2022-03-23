@@ -52,10 +52,10 @@ def main(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     vol_bnd = np.array([cfg['sdf']['x_min'], cfg['sdf']['y_min'], cfg['sdf']['z_min'],
                         cfg['sdf']['x_max'], cfg['sdf']['y_max'], cfg['sdf']['z_max']], dtype=nf32).reshape(2, 3)
-    voxel_length = cfg['sdf']['voxel_length']
-    tsdf = SDF(vol_bnd, voxel_length, rgb=False, device=device)
+    resolution = cfg['sdf']['resolution']
+    tsdf = SDF(vol_bnd, resolution, rgb=False, device=device)
     vol_bnd = tsdf.vol_bnd
-    # tsdf = TSDF(vol_bnd, voxel_length)
+    # tsdf = TSDF(vol_bnd, resolution)
     i = 0
     while i < cfg['scene']['trial']:
         info_dict = dict()
