@@ -81,39 +81,46 @@ def select_gripper_pose(tsdf, pg, score, cp1, cp2, gripper_depth, num_angle=64, 
     """
     dtype = score.dtype
     dev = score.device
+    score = torch.sigmoid(score)
     score, rank = torch.sort(score, descending=True)
-    cp1, cp2 = cp1[rank[0]], cp2[rank[0]]
-    pos = (cp1 + cp2) / 2
+    th_s = score[0] * 0.97  # select top 3% contact points as candidates
+    rank = rank[score >= th_s]
+    num_cp = rank.shape[0]
+    cp1, cp2 = cp1[rank], cp2[rank]
+    pos = (cp1 + cp2) / 2  # num_cp * 3
     y = cp1 - cp2
-    norm = torch.linalg.norm(y)
-    y = y / norm
+    norm = torch.linalg.norm(y, dim=1, keepdim=True)
+    y = y / norm  # num_cp * 3
     width = torch.clamp(norm + 0.02, 0.0, max_width)
     offset = (max_width - width) / 2
-    u, _, _ = torch.linalg.svd(y.view(3, 1))
-    x = u[:, 1]
-    z = torch.cross(x, y)
-    rot0 = torch.stack([x, y, z], dim=1)
-    angles = torch.arange(num_angle, dtype=dtype, device=dev) / num_angle * 2 * torch.pi
-    delta_rots = basic_rots(angles, axis='y')  # 64 * 3 * 3
-    rots = torch.matmul(rot0.reshape(1, 3, 3), delta_rots)  # 64 * 3 * 3
-    ys = rots[:, :, 1].unsqueeze(dim=1)  # 64 * 1 * 3
+    offset = offset.unsqueeze(-1).unsqueeze(-1)  # num_cp * 1 * 1 * 1
+    u, _, _ = torch.linalg.svd(y.view(num_cp, 3, 1))  # the shape of u: num_cp * 3 * 3
+    x = u[..., 1]  # num_cp * 3
+    z = torch.cross(x, y, dim=1)
+    rot0 = torch.stack([x, y, z], dim=2)  # num_cp * 3 * 3
+    angles = torch.arange(num_angle, dtype=dtype, device=dev) / num_angle * 2 * torch.pi  # num_angle
+    delta_rots = basic_rots(angles, axis='y')  # num_angle * 3 * 3
+    rots = torch.matmul(rot0.unsqueeze(dim=1), delta_rots.unsqueeze(dim=0))  # num_cp * num_angle * 3 * 3
+    ys = rots[..., 1].unsqueeze(dim=2)  # num_cp * num_angle * 1 * 3
     n_h, n_l, n_r = pg['hand'].shape[0], pg['left_finger'].shape[0], pg['right_finger'].shape[0]
     vs = torch.from_numpy(np.concatenate([pg['hand'], pg['left_finger'], pg['right_finger']], axis=0)).to(dtype).to(dev)
     num_v = vs.shape[0]
-    pos = pos.reshape(1, 1, 3) - rots[..., 2].unsqueeze(dim=1) * gripper_depth
-    vs = torch.matmul(rots, vs.permute(1, 0).unsqueeze(dim=0)).permute(0, 2, 1) + pos  # 64 * n * 3
-    vs[:, n_h:n_h+n_l] = vs[:, n_h:n_h+n_l] - offset * ys  # left finger vertices
-    vs[:, n_h+n_l:n_h+n_l+n_r] = vs[:, n_h+n_l:n_h+n_l+n_r] + offset * ys  # right finger vertices
-    sdv = tsdf.extract_sdf(vs.reshape(-1, 3)).reshape(num_angle, num_v)
-    num_free = torch.sum(sdv > 0, dim=1)
-    flag_s = num_free > torch.max(num_free) * 0.9
+    pos = pos.reshape(num_cp, 1, 3) - rots[..., 2] * gripper_depth  # num_cp * num_angle * 3
+    vs = torch.matmul(rots, vs.permute(1, 0).unsqueeze(0).unsqueeze(0)).permute(0, 1, 3, 2) + pos.unsqueeze(2)  # num_cp * num_angle * num_v * 3
+    vs[..., n_h:n_h+n_l, :] = vs[..., n_h:n_h+n_l, :] - offset * ys  # left finger vertices
+    vs[..., n_h+n_l:n_h+n_l+n_r, :] = vs[..., n_h+n_l:n_h+n_l+n_r, :] + offset * ys  # right finger vertices
+    sdv = tsdf.extract_sdf(vs.reshape(-1, 3)).reshape(num_cp, num_angle, num_v)
+    num_free = torch.sum(sdv > 0, dim=-1)  # num_cp * num_angle
+    flag_s = num_free > torch.max(num_free) * 0.97
     rots = rots[flag_s]
     pos = pos[flag_s]
+    width = torch.cat([width] * num_angle, dim=1)[flag_s]
     score_n = rots[:, 2, 2]
     _, ids = torch.sort(score_n)
     rots = rots[ids]
     pos = pos[ids].squeeze(dim=1)
-    return pos[0].cpu().numpy(), rots[0].cpu().numpy(), width.cpu().numpy()
+    width = width[ids]
+    return pos[0].cpu().numpy(), rots[0].cpu().numpy(), width[0].cpu().numpy()
 
 
 def basic_rots(angles, axis):
