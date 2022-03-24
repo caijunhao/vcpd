@@ -115,8 +115,9 @@ def select_gripper_pose(tsdf, pg, score, cp1, cp2, gripper_depth, num_angle=64, 
     rots = rots[flag_s]
     pos = pos[flag_s]
     width = torch.cat([width] * num_angle, dim=1)[flag_s]
-    score_n = rots[:, 2, 2]
-    _, ids = torch.sort(score_n)
+    num_free = num_free[flag_s]
+    score_n = -rots[:, 2, 2] + num_free / num_v * 2
+    _, ids = torch.sort(score_n, descending=True)
     rots = rots[ids]
     pos = pos[ids].squeeze(dim=1)
     width = width[ids]

@@ -6,6 +6,7 @@ from sim.objects import RigidObject, PandaGripper
 from sim.tray import Tray
 from sim.utils import *
 from sdf import SDF
+import xml.etree.ElementTree as et
 import pybullet as p
 import pybullet_data
 import numpy as np
@@ -54,12 +55,19 @@ def main(args):
         for j in range(cfg['test']['obj']):
             mesh_name = np.random.choice(mesh_list)
             print('loading {} into pybullet...'.format(mesh_name))
+            urdf_path = os.path.join(args.mesh, mesh_name, mesh_name + '.urdf')
+            scale = [elem for elem in et.parse(urdf_path).getroot().iter('mesh')][0].attrib['scale'].split(' ')
+            scale = [float(s) for s in scale]
             vis_params, col_params, body_params = get_multi_body_template()
             vis_params['fileName'] = os.path.join(args.mesh, mesh_name, mesh_name + '_vis.obj')
+            vis_params['meshScale'] = scale
             col_params['fileName'] = os.path.join(args.mesh, mesh_name, mesh_name + '_col.obj')
+            col_params['meshScale'] = scale
             pos, quat = np.array([1 - 0.5 * j, 1, 0.1]), np.array([0, 0, 0, 1])
             body_params['basePosition'], body_params['baseOrientation'] = pos, quat
             body_params['baseMass'] = 1.0
+            # dynamic_list.append(RigidObject(mesh_name,
+            #                                 fileName=urdf_path, basePosition=pos, baseOrientation=quat, mass=1.0))
             dynamic_list.append(RigidObject(mesh_name,
                                             vis_params=vis_params,
                                             col_params=col_params,
@@ -70,6 +78,11 @@ def main(args):
                                            vis_params=vis_params,
                                            col_params=col_params,
                                            body_params=body_params))
+            # static_list.append(RigidObject(mesh_name,
+            #                                fileName=urdf_path,
+            #                                basePosition=np.array([1 - 0.5 * j, 2, 0.1]),
+            #                                baseOrientation=np.array([0, 0, 0, 1]),
+            #                                mass=0))
             static_list[-1].change_color()
         p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
         place_order = np.arange(cfg['test']['obj'])
@@ -122,6 +135,7 @@ def main(args):
                 quat = Rotation.from_matrix(rot).as_quat()
                 pg.set_pose(pos, quat)
                 pg.set_gripper_width(width + 0.02)
+                tsdf.write_mesh('out.ply', *tsdf.compute_mesh(step_size=1))
                 print('is collided: {}'.format(pg.is_collided([])))
                 pg.set_pose([-1, 0, 0], [0, 0, 0, 1])
         p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
