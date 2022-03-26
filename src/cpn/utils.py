@@ -89,9 +89,9 @@ def select_gripper_pose(tsdf, pg, score, cp1, cp2, gripper_depth, num_angle=64, 
     cp1, cp2 = cp1[rank], cp2[rank]
     pos = (cp1 + cp2) / 2  # num_cp * 3
     y = cp1 - cp2
-    norm = torch.linalg.norm(y, dim=1, keepdim=True)
-    y = y / norm  # num_cp * 3
-    width = torch.clamp(norm + 0.02, 0.0, max_width)
+    distance = torch.linalg.norm(y, dim=1, keepdim=True)
+    y = y / distance  # num_cp * 3
+    width = torch.clamp(distance + 0.02, 0.0, max_width)  # num_cp * 1
     offset = (max_width - width) / 2
     offset = offset.unsqueeze(-1).unsqueeze(-1)  # num_cp * 1 * 1 * 1
     u, _, _ = torch.linalg.svd(y.view(num_cp, 3, 1))  # the shape of u: num_cp * 3 * 3
@@ -105,23 +105,60 @@ def select_gripper_pose(tsdf, pg, score, cp1, cp2, gripper_depth, num_angle=64, 
     n_h, n_l, n_r = pg['hand'].shape[0], pg['left_finger'].shape[0], pg['right_finger'].shape[0]
     vs = torch.from_numpy(np.concatenate([pg['hand'], pg['left_finger'], pg['right_finger']], axis=0)).to(dtype).to(dev)
     num_v = vs.shape[0]
-    pos = pos.reshape(num_cp, 1, 3) - rots[..., 2] * gripper_depth  # num_cp * num_angle * 3
-    vs = torch.matmul(rots, vs.permute(1, 0).unsqueeze(0).unsqueeze(0)).permute(0, 1, 3, 2) + pos.unsqueeze(2)  # num_cp * num_angle * num_v * 3
+    gripper_pos = pos.reshape(num_cp, 1, 3) - rots[..., 2] * gripper_depth  # num_cp * num_angle * 3
+    vs = torch.matmul(rots, vs.permute(1, 0).unsqueeze(0).unsqueeze(0)).permute(0, 1, 3, 2) + gripper_pos.unsqueeze(2)  # num_cp * num_angle * num_v * 3
     vs[..., n_h:n_h+n_l, :] = vs[..., n_h:n_h+n_l, :] - offset * ys  # left finger vertices
     vs[..., n_h+n_l:n_h+n_l+n_r, :] = vs[..., n_h+n_l:n_h+n_l+n_r, :] + offset * ys  # right finger vertices
     sdv = tsdf.extract_sdf(vs.reshape(-1, 3)).reshape(num_cp, num_angle, num_v)
     num_free = torch.sum(sdv > 0, dim=-1)  # num_cp * num_angle
-    flag_s = num_free > torch.max(num_free) * 0.97
+    flag_s = num_free > torch.max(num_free) * 0.99
     rots = rots[flag_s]
-    pos = pos[flag_s]
+    gripper_pos = gripper_pos[flag_s]
     width = torch.cat([width] * num_angle, dim=1)[flag_s]
     num_free = num_free[flag_s]
-    score_n = -rots[:, 2, 2] + num_free / num_v * 2
+    score_n = -rots[:, 2, 2] + num_free / num_v * 20
     _, ids = torch.sort(score_n, descending=True)
+    # ids = ids[torch.randperm(ids.shape[0])]
     rots = rots[ids]
-    pos = pos[ids].squeeze(dim=1)
+    gripper_pos = gripper_pos[ids].squeeze(dim=1)
     width = width[ids]
-    return pos[0].cpu().numpy(), rots[0].cpu().numpy(), width[0].cpu().numpy()
+    # debug: visualize the contact points
+    # distance = torch.cat([distance] * num_angle, dim=1)[flag_s]
+    # distance = distance[ids]
+    # pos = torch.stack([pos] * num_angle, dim=1)[flag_s]
+    # pos = pos[ids]
+    # grasp_directions = rots[:, 1]
+    # cp1 = (pos + grasp_directions * distance.reshape(-1, 1) / 2).cpu().numpy()
+    # cp2 = (pos - grasp_directions * distance.reshape(-1, 1) / 2).cpu().numpy()
+    # ids = np.random.choice(np.arange(cp1.shape[0]), size=min(50, cp1.shape[0]), replace=False)
+    # cp1, cp2 = cp1[ids], cp2[ids]
+    # import pybullet as p
+    # radius = 0.003
+    # p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
+    # cp1s = [p.createMultiBody(0,
+    #                           p.createCollisionShape(p.GEOM_SPHERE, radius),
+    #                           p.createVisualShape(p.GEOM_SPHERE, radius, rgbaColor=[1, 0, 0, 1]),
+    #                           basePosition=cp) for cp in cp1]
+    # p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
+    # p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
+    # cp2s = [p.createMultiBody(0,
+    #                           p.createCollisionShape(p.GEOM_SPHERE, radius),
+    #                           p.createVisualShape(p.GEOM_SPHERE, radius, rgbaColor=[0, 1, 0, 1]),
+    #                           basePosition=cp) for cp in cp2]
+    # p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
+    # p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
+    # lines = [p.addUserDebugLine(cp1[pid], cp2[pid],
+    #                             lineColorRGB=np.random.uniform(size=3),
+    #                             lineWidth=0.1) for pid in range(cp2.shape[0])]
+    # p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
+    # p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
+    # [p.removeBody(cp) for cp in cp1s]
+    # [p.removeBody(cp) for cp in cp2s]
+    # [p.removeUserDebugItem(line) for line in lines]
+    # p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
+    # del p
+    # /debug
+    return gripper_pos[0].cpu().numpy(), rots[0].cpu().numpy(), width[0].cpu().numpy()
 
 
 def basic_rots(angles, axis):
