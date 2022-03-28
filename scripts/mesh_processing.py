@@ -65,6 +65,25 @@ def get_obj_urdf(name, m=1.0, s=1.0):
     return xml_str
 
 
+def dexnet(mesh_path, output):
+    ms = ml.MeshSet()
+    for obj_name in os.listdir(os.path.join(mesh_path)):
+        print(obj_name)
+        obj_name = obj_name[:-4]
+        obj_path = os.path.join(output, obj_name)
+        if not os.path.exists(obj_path):
+            os.makedirs(obj_path)
+        ms.load_new_mesh(os.path.join(mesh_path, obj_name + '.obj'))
+        ms.save_current_mesh(os.path.join(obj_path, obj_name + '.obj'))
+        ms.save_current_mesh(os.path.join(obj_path, obj_name + '_vis.obj'))
+        ms.convex_hull()
+        ms.save_current_mesh(os.path.join(obj_path, obj_name + '_col.obj'))
+        xml_str = get_obj_urdf(obj_name, m=1.0, s=1.0)
+        with open(os.path.join(obj_path, obj_name + '.urdf'), 'w') as f:
+            f.write(xml_str)
+
+
+
 def kit(mesh_path, output):
     ms = ml.MeshSet()
     for obj_name in os.listdir(os.path.join(mesh_path)):
