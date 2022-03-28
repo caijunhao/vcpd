@@ -36,7 +36,7 @@ class RigidObject(object):
         if rgb is None:
             p.changeVisualShape(self.obj_id, -1, rgbaColor=np.random.uniform(size=3).tolist()+[a])
         else:
-            p.changeVisualShape(self.obj_id, -1, rgbaColor=rgb.tolist() + [a])
+            p.changeVisualShape(self.obj_id, -1, rgbaColor=np.asarray(rgb).tolist() + [a])
 
     def get_pose(self):
         position, quaternion = p.getBasePositionAndOrientation(self.obj_id)

@@ -60,12 +60,43 @@ def step_simulation(num_steps):
         p.stepSimulation()
 
 
-def add_sphere(pos, radius=0.002):
+def add_sphere(pos, radius=0.002, rgb=None):
     obj_id = p.createMultiBody(0,
                                p.createCollisionShape(p.GEOM_SPHERE, radius),
                                p.createVisualShape(p.GEOM_SPHERE, radius),
                                basePosition=pos)
+    if rgb:
+        p.changeVisualShape(obj_id, -1, rgbaColor=np.asarray(rgb).tolist()+[1])
     return obj_id
+
+
+def get_closest_obj(pos, obj_list):
+    s = add_sphere(pos)
+    closest = 1e7
+    closest_obj = obj_list[0]
+    for obj in obj_list:
+        contacts = p.getClosestPoints(s, obj.obj_id, distance=0.04)
+        if len(contacts) != 0:
+            min_dist = min(contacts, key=lambda x: abs(x[8]))[8]
+            if min_dist < closest:
+                closest_obj = obj
+                closest = min_dist
+    p.removeBody(s)
+    return closest_obj
+
+
+def get_closest_contact(pos, obj):
+    s = add_sphere(pos, radius=0.0005)
+    th = 0.005
+    contact, normal = None, None
+    while contact is None:
+        contacts = p.getClosestPoints(s, obj.obj_id, distance=th)
+        if len(contacts) != 0:
+            contact, normal = min(contacts, key=lambda x: abs(x[8]))[6:8]
+        else:
+            th += 0.005
+    p.removeBody(s)
+    return np.array(contact), np.array(normal)
 
 
 def check_valid_pts(pts, bounds):

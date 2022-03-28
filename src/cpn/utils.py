@@ -122,34 +122,35 @@ def select_gripper_pose(tsdf, pg, score, cp1, cp2, gripper_depth, num_angle=64, 
     rots = rots[ids]
     gripper_pos = gripper_pos[ids].squeeze(dim=1)
     width = width[ids]
-    # debug: visualize the contact points
-    # distance = torch.cat([distance] * num_angle, dim=1)[flag_s]
-    # distance = distance[ids]
-    # pos = torch.stack([pos] * num_angle, dim=1)[flag_s]
-    # pos = pos[ids]
-    # grasp_directions = rots[:, 1]
-    # cp1 = (pos + grasp_directions * distance.reshape(-1, 1) / 2).cpu().numpy()
-    # cp2 = (pos - grasp_directions * distance.reshape(-1, 1) / 2).cpu().numpy()
-    # ids = np.random.choice(np.arange(cp1.shape[0]), size=min(50, cp1.shape[0]), replace=False)
-    # cp1, cp2 = cp1[ids], cp2[ids]
+    # recompute the contact points
+    distance = torch.cat([distance] * num_angle, dim=1)[flag_s]
+    distance = distance[ids]
+    pos = torch.stack([pos] * num_angle, dim=1)[flag_s]
+    pos = pos[ids]
+    grasp_directions = rots[:, 1]
+    cp1 = (pos + grasp_directions * distance.reshape(-1, 1) / 2)
+    cp2 = (pos - grasp_directions * distance.reshape(-1, 1) / 2)
+    # debug: sample contact points and visualize
+    # ids = torch.randperm(cp1.shape[0])[0:min(50, cp1.shape[0])]
+    # selected_cp1, selected_cp2 = cp1[ids].cpu().numpy(), cp2[ids].cpu().numpy()
     # import pybullet as p
     # radius = 0.003
     # p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
     # cp1s = [p.createMultiBody(0,
     #                           p.createCollisionShape(p.GEOM_SPHERE, radius),
     #                           p.createVisualShape(p.GEOM_SPHERE, radius, rgbaColor=[1, 0, 0, 1]),
-    #                           basePosition=cp) for cp in cp1]
+    #                           basePosition=cp) for cp in selected_cp1]
     # p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
     # p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
     # cp2s = [p.createMultiBody(0,
     #                           p.createCollisionShape(p.GEOM_SPHERE, radius),
     #                           p.createVisualShape(p.GEOM_SPHERE, radius, rgbaColor=[0, 1, 0, 1]),
-    #                           basePosition=cp) for cp in cp2]
+    #                           basePosition=cp) for cp in selected_cp2]
     # p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
     # p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
-    # lines = [p.addUserDebugLine(cp1[pid], cp2[pid],
+    # lines = [p.addUserDebugLine(selected_cp1[pid], selected_cp2[pid],
     #                             lineColorRGB=np.random.uniform(size=3),
-    #                             lineWidth=0.1) for pid in range(cp2.shape[0])]
+    #                             lineWidth=0.1) for pid in range(selected_cp2.shape[0])]
     # p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
     # p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
     # [p.removeBody(cp) for cp in cp1s]
@@ -158,7 +159,7 @@ def select_gripper_pose(tsdf, pg, score, cp1, cp2, gripper_depth, num_angle=64, 
     # p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
     # del p
     # /debug
-    return gripper_pos[0].cpu().numpy(), rots[0].cpu().numpy(), width[0].cpu().numpy()
+    return gripper_pos[0].cpu().numpy(), rots[0].cpu().numpy(), width[0].cpu().numpy(), cp1[0].cpu().numpy(), cp2[0].cpu().numpy()
 
 
 def basic_rots(angles, axis):

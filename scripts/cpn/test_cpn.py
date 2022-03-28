@@ -48,6 +48,8 @@ def main(args):
     voxel_length = cfg['sdf']['resolution']
     tsdf = SDF(vol_bnd, voxel_length, rgb=False, device=device)
     i = 0
+    avg_anti_score = 0.0
+    col_free_rate = 0.0
     while i < args.num_test:
         dynamic_list = list()
         static_list = list()
@@ -63,7 +65,7 @@ def main(args):
             vis_params['meshScale'] = scale
             col_params['fileName'] = os.path.join(args.mesh, mesh_name, mesh_name + '_col.obj')
             col_params['meshScale'] = scale
-            pos, quat = np.array([1 - 0.5 * j, 1, 0.1]), np.array([0, 0, 0, 1])
+            pos, quat = np.array([1 - 0.5 * j, 1, -0.1]), np.array([0, 0, 0, 1])
             body_params['basePosition'], body_params['baseOrientation'] = pos, quat
             body_params['baseMass'] = 1.0
             # dynamic_list.append(RigidObject(mesh_name,
@@ -73,7 +75,7 @@ def main(args):
                                             col_params=col_params,
                                             body_params=body_params))
             body_params['baseMass'] = 0
-            body_params['basePosition'] = np.array([1 - 0.5 * j, 2, 0.1])
+            body_params['basePosition'] = np.array([1 - 0.5 * j, 2, -0.1])
             static_list.append(RigidObject(mesh_name,
                                            vis_params=vis_params,
                                            col_params=col_params,
@@ -83,7 +85,7 @@ def main(args):
             #                                basePosition=np.array([1 - 0.5 * j, 2, 0.1]),
             #                                baseOrientation=np.array([0, 0, 0, 1]),
             #                                mass=0))
-            static_list[-1].change_color()
+            static_list[-1].change_color(a=0.7)
         p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
         place_order = np.arange(cfg['test']['obj'])
         np.random.shuffle(place_order)
@@ -96,7 +98,7 @@ def main(args):
         while not stable and curr_wait < cfg['scene']['wait']:
             stable = dynamic_list[0].is_stable() & dynamic_list[-1].is_stable()
             curr_wait += 1
-        init_tray.set_pose([-2, 0, 0])
+        init_tray.set_pose([-2, 0, -1])
         tray.set_pose([0, 0, 0])
         stable = False
         curr_wait = 0
@@ -108,7 +110,7 @@ def main(args):
         # replace dynamic objects with static ones to keep the scene stable during rendering
         for j in place_order:
             pos, quat = dynamic_list[j].get_pose()
-            dynamic_list[j].set_pose(np.array([1 - 0.5 * j, 1, 0.1]), np.array([0, 0, 0, 1]))
+            dynamic_list[j].set_pose(np.array([1 - 0.5 * j, 1, -0.1]), np.array([0, 0, 0, 1]))
             static_list[j].set_pose(pos, quat)
             poses[j, :3], poses[j, 3:] = pos, quat
         rgb_list, depth_list, pose_list, intr_list = list(), list(), list(), list()
@@ -118,6 +120,7 @@ def main(args):
             # noise_depth = camera.add_noise(depth)
             cam.sample_a_pose_from_a_sphere(np.array(cfg['camera']['target_position']),
                                             cfg['camera']['eye_position'][-1])
+        curr_anti_score, col = 0.0, 1
         for ri, di, pi, ii, idx in zip(rgb_list, depth_list, pose_list, intr_list, range(len(intr_list))):
             ri = ri[..., 0:3].astype(np.float32)
             di = cam.add_noise(di).astype(np.float32)
@@ -131,18 +134,39 @@ def main(args):
                 sample['ids_cp1'] = ids_cp1.permute((1, 0)).unsqueeze(dim=0).unsqueeze(dim=-1)
                 sample['ids_cp2'] = ids_cp2.permute((1, 0)).unsqueeze(dim=0).unsqueeze(dim=-1)
                 out = torch.squeeze(cpn.forward(sample))
-                pos, rot, width = select_gripper_pose(tsdf, pg.vertex_sets, out, cp1, cp2, cfg['gripper']['depth'])
+                pos, rot, width, cp1, cp2 = select_gripper_pose(tsdf, pg.vertex_sets, out, cp1, cp2, cfg['gripper']['depth'])
                 quat = Rotation.from_matrix(rot).as_quat()
                 pg.set_pose(pos, quat)
                 pg.set_gripper_width(width + 0.02)
-                tsdf.write_mesh('out.ply', *tsdf.compute_mesh(step_size=1))
-                print('is collided: {}'.format(pg.is_collided([])))
-                pg.set_pose([-1, 0, 0], [0, 0, 0, 1])
+                end_point_pos = pos + rot[:, 2] * cfg['gripper']['depth']
+                closest_obj = get_closest_obj(end_point_pos, static_list)
+                contact1, normal1 = get_closest_contact(cp1, closest_obj)
+                contact2, normal2 = get_closest_contact(cp2, closest_obj)
+                grasp_direction = contact2 - contact1
+                grasp_direction = grasp_direction / np.linalg.norm(grasp_direction)
+                curr_anti_score = np.abs(grasp_direction @ normal1) * np.abs(grasp_direction @ normal2)
+                # uncomment for visualization
+                # s1 = add_sphere(contact1)
+                # l1 = p.addUserDebugLine(contact1 - 0.01 * normal1, contact1 + 0.01 * normal1)
+                # s2 = add_sphere(contact2)
+                # l2 = p.addUserDebugLine(contact2 - 0.01 * normal2, contact2 + 0.01 * normal2)
+                # closest_obj.change_color()
+                # p.removeBody(s1), p.removeBody(s2), p.removeUserDebugItem(l1), p.removeUserDebugItem(l2)
+                # tsdf.write_mesh('out.ply', *tsdf.compute_mesh(step_size=1))
+                print('current antipodal score: {:04f} given {} view(s)'.format(curr_anti_score, idx))
+                col = pg.is_collided(tray.get_tray_ids())
+                print('is collided: {}'.format(col))
+                pg.set_pose([-1, 0, -1], [0, 0, 0, 1])
+        avg_anti_score = (curr_anti_score + avg_anti_score * i) / (i + 1)
+        print('# of trials: {} | current average antipodal score: {:04f}'.format(i, avg_anti_score))
+        col_free_rate = (1 - int(col) + col_free_rate * i) / (i + 1)
+        print('# of trials: {} | current average collision free rate: {:04f}'.format(i, col_free_rate))
         p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
         [p.removeBody(o.obj_id) for o in dynamic_list]
         [p.removeBody(o.obj_id) for o in static_list]
         p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
         tsdf.reset()
+        i += 1
 
 
 if __name__ == '__main__':
