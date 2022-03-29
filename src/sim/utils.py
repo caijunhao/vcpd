@@ -86,7 +86,7 @@ def get_closest_obj(pos, obj_list):
 
 
 def get_closest_contact(pos, obj):
-    s = add_sphere(pos, radius=0.0005)
+    s = add_sphere(pos, radius=0.00001)
     th = 0.005
     contact, normal = None, None
     while contact is None:
@@ -97,6 +97,24 @@ def get_closest_contact(pos, obj):
             th += 0.005
     p.removeBody(s)
     return np.array(contact), np.array(normal)
+
+
+def get_contact_points(cp1, cp2, obj):
+    grasp_direction = cp1 - cp2
+    grasp_center = (cp1 + cp2) / 2
+    grasp_direction = grasp_direction / np.linalg.norm(grasp_direction)
+    length = 0.001
+    intersections = p.rayTestBatch([cp1+length*grasp_direction, cp2-length*grasp_direction],
+                                   [grasp_center, grasp_center])
+    while intersections[0][0] == -1 or intersections[1][0] == -1:
+        length += 0.001
+        intersections = p.rayTestBatch([cp1+length*grasp_direction, cp2-length*grasp_direction],
+                                       [grasp_center, grasp_center])
+    contact1, normal1 = np.asarray(intersections[0][3]), np.asarray(intersections[0][4])
+    contact2, normal2 = np.asarray(intersections[1][3]), np.asarray(intersections[1][4])
+    if intersections[0][0] != obj.obj_id or intersections[1][0] != obj.obj_id:
+        print('Warning! The retrieved contact points do not belong to the target object.')
+    return contact1, normal1, contact2, normal2
 
 
 def check_valid_pts(pts, bounds):

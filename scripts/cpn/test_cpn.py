@@ -140,8 +140,7 @@ def main(args):
                 pg.set_gripper_width(width + 0.02)
                 end_point_pos = pos + rot[:, 2] * cfg['gripper']['depth']
                 closest_obj = get_closest_obj(end_point_pos, static_list)
-                contact1, normal1 = get_closest_contact(cp1, closest_obj)
-                contact2, normal2 = get_closest_contact(cp2, closest_obj)
+                contact1, normal1, contact2, normal2 = get_contact_points(cp1, cp2, closest_obj)
                 grasp_direction = contact2 - contact1
                 grasp_direction = grasp_direction / np.linalg.norm(grasp_direction)
                 curr_anti_score = np.abs(grasp_direction @ normal1) * np.abs(grasp_direction @ normal2)
@@ -158,7 +157,7 @@ def main(args):
                 print('is collided: {}'.format(col))
                 pg.set_pose([-1, 0, -1], [0, 0, 0, 1])
         avg_anti_score = (curr_anti_score + avg_anti_score * i) / (i + 1)
-        print('# of trials: {} | current average antipodal score: {:04f}'.format(i, avg_anti_score))
+        print('# of trials: {} | current average antipodal scorewho: {:04f}'.format(i, avg_anti_score))
         col_free_rate = (1 - int(col) + col_free_rate * i) / (i + 1)
         print('# of trials: {} | current average collision free rate: {:04f}'.format(i, col_free_rate))
         p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
@@ -185,11 +184,11 @@ if __name__ == '__main__':
                         help='path to the pretrained model.')
     parser.add_argument('--num_test',
                         type=int,
-                        default=100,
+                        default=1000,
                         help='the number of test trials.')
     parser.add_argument('--gui',
                         type=int,
-                        default=1,
+                        default=0,
                         help='choose 0 for DIRECT mode and 1 (or others) for GUI mode.')
     parser.add_argument('--cuda_device',
                         default='0',
