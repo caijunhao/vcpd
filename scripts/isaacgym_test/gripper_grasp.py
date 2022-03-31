@@ -1,3 +1,12 @@
+import argparse
+parser = argparse.ArgumentParser(description='Stacked scene construction.')
+parser.add_argument('--isaacgym_path',
+                    default='/home/sujc/code/isaacgym/python',
+                    help='path to installed isaac gym(should be like .../isaacgym/python)')
+args = parser.parse_args()
+import sys
+sys.path.append(args.isaacgym_path)
+
 from isaacgym import gymapi
 from isaacgym import gymutil
 from isaacgym import gymtorch
@@ -6,7 +15,7 @@ from isaacgym.torch_utils import *
 import math
 import numpy as np
 import torch
-from utils import *
+from isaac.utils import *
 from scipy.spatial.transform import Rotation as R
 import os
 

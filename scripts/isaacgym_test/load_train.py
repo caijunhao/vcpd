@@ -1,4 +1,4 @@
-from utils import  get_obj_file
+from isaac.utils import  get_obj_file
 import os
 root_path = '/home/sujc/code/vcpd-master/data/train/gym_test_2'
 success = 0
