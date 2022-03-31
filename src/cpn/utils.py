@@ -66,7 +66,7 @@ def sample_contact_points(tsdf, th_a=30, th_s=0.2, start=0.01, end=0.06, num_ste
     return v, vs[v_ids, min_ids]
 
 
-def select_gripper_pose(tsdf, pg, score, cp1, cp2, gripper_depth, num_angle=64, max_width=0.08):
+def select_gripper_pose(tsdf, pg, score, cp1, cp2, gripper_depth, num_angle=32, max_width=0.08):
     """
     Select collision-free pose according to the quality scores of the contact points.
     :param tsdf: the SDF instance
@@ -74,7 +74,7 @@ def select_gripper_pose(tsdf, pg, score, cp1, cp2, gripper_depth, num_angle=64, 
     :param score: an N-D torch tensor representing the grasp qualities of contact point pairs.
     :param cp1: an Nx3-D torch tensor representing the 3D locations of the left contact points.
     :param cp2: an Nx3-D torch tensor representing the 3D locations of the right contact points.
-    :param gripper_depth:
+    :param gripper_depth:y[:, 0:2]
     :param num_angle: the number of discretized angles in x-z plane
     :param max_width:
     :return: the 7-DoF gripper pose with the highest grasp quality and free collision.
@@ -94,13 +94,21 @@ def select_gripper_pose(tsdf, pg, score, cp1, cp2, gripper_depth, num_angle=64, 
     width = torch.clamp(distance + 0.02, 0.0, max_width)  # num_cp * 1
     offset = (max_width - width) / 2
     offset = offset.unsqueeze(-1).unsqueeze(-1)  # num_cp * 1 * 1 * 1
-    u, _, _ = torch.linalg.svd(y.view(num_cp, 3, 1))  # the shape of u: num_cp * 3 * 3
-    x = u[..., 1]  # num_cp * 3
-    z = torch.cross(x, y, dim=1)
+    z = torch.zeros_like(y, dtype=dtype, device=dev)
+    z_norm = torch.linalg.norm(y[:, 0:2], dim=1)
+    z[:, 0] = torch.abs(y[:, 1]) / z_norm
+    z[:, 1] = -torch.abs(y[:, 0]) / z_norm
+    x = torch.cross(y, z)
+    x = x / torch.linalg.norm(x, dim=1, keepdim=True)
+    # u, _, _ = torch.linalg.svd(y.view(num_cp, 3, 1))  # the shape of u: num_cp * 3 * 3
+    # x = u[..., 1]  # num_cp * 3
+    # z = torch.cross(x, y, dim=1)
     rot0 = torch.stack([x, y, z], dim=2)  # num_cp * 3 * 3
-    angles = torch.arange(num_angle, dtype=dtype, device=dev) / num_angle * 2 * torch.pi  # num_angle
+    angles = torch.arange(num_angle, dtype=dtype, device=dev) / num_angle * torch.pi  # num_angle
     delta_rots = basic_rots(angles, axis='y')  # num_angle * 3 * 3
     rots = torch.matmul(rot0.unsqueeze(dim=1), delta_rots.unsqueeze(dim=0))  # num_cp * num_angle * 3 * 3
+    z_flag = rots[..., -1, -1] > 0
+    rots[z_flag, :, 0], rots[z_flag, :, 2] = -rots[z_flag, :, 0], -rots[z_flag, :, 2]
     ys = rots[..., 1].unsqueeze(dim=2)  # num_cp * num_angle * 1 * 3
     n_h, n_l, n_r = pg['hand'].shape[0], pg['left_finger'].shape[0], pg['right_finger'].shape[0]
     vs = torch.from_numpy(np.concatenate([pg['hand'], pg['left_finger'], pg['right_finger']], axis=0)).to(dtype).to(dev)
