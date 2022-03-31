@@ -7,3 +7,4 @@ trimesh
 pymeshlab==2022.2.post2
 numpy
 tensorboard
+isaacgym
