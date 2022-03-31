@@ -135,9 +135,6 @@ def main(args):
                 sample['ids_cp2'] = ids_cp2.permute((1, 0)).unsqueeze(dim=0).unsqueeze(dim=-1)
                 out = torch.squeeze(cpn.forward(sample))
                 pos, rot, width, cp1, cp2 = select_gripper_pose(tsdf, pg.vertex_sets, out, cp1, cp2, cfg['gripper']['depth'])
-                quat = Rotation.from_matrix(rot).as_quat()
-                pg.set_pose(pos, quat)
-                pg.set_gripper_width(width + 0.02)
                 end_point_pos = pos + rot[:, 2] * cfg['gripper']['depth']
                 closest_obj = get_closest_obj(end_point_pos, static_list)
                 contact1, normal1, contact2, normal2 = get_contact_points(cp1, cp2, closest_obj)
@@ -145,6 +142,9 @@ def main(args):
                 grasp_direction = grasp_direction / np.linalg.norm(grasp_direction)
                 curr_anti_score = np.abs(grasp_direction @ normal1) * np.abs(grasp_direction @ normal2)
                 # uncomment for visualization
+                # quat = Rotation.from_matrix(rot).as_quat()
+                # pg.set_pose(pos, quat)
+                # pg.set_gripper_width(width + 0.02)
                 # s1 = add_sphere(contact1)
                 # l1 = p.addUserDebugLine(contact1 - 0.01 * normal1, contact1 + 0.01 * normal1)
                 # s2 = add_sphere(contact2)
@@ -188,7 +188,7 @@ if __name__ == '__main__':
                         help='the number of test trials.')
     parser.add_argument('--gui',
                         type=int,
-                        default=0,
+                        default=1,
                         help='choose 0 for DIRECT mode and 1 (or others) for GUI mode.')
     parser.add_argument('--cuda_device',
                         default='0',

@@ -4,6 +4,6 @@ scikit-image
 matplotlib
 scipy
 trimesh
-pymeshlab
+pymeshlab==2022.2.post2
 numpy
 tensorboard
