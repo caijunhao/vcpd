@@ -41,15 +41,15 @@ def basic_rot_mat(angles, axis):
     if axis == 'x':
         rots = np.stack([one, zero, zero,
                          zero, cos, -sin,
-                         zero, sin, cos], axis=1).reshape(shape+[3, 3])
+                         zero, sin, cos], axis=-1).reshape(shape+[3, 3])
     elif axis == 'y':
         rots = np.stack([cos, zero, sin,
                          zero, one, zero,
-                         -sin, zero, cos], axis=1).reshape(shape+[3, 3])
+                         -sin, zero, cos], axis=-1).reshape(shape+[3, 3])
     elif axis == 'z':
         rots = np.stack([cos, -sin, zero,
                          sin, cos, zero,
-                         zero, zero, one], axis=1).reshape(shape+[3, 3])
+                         zero, zero, one], axis=-1).reshape(shape+[3, 3])
     else:
         raise ValueError('invalid axis')
     return rots
@@ -109,6 +109,21 @@ def get_contact_points(cp1, cp2, obj):
     while intersections[0][0] == -1 or intersections[1][0] == -1:
         length += 0.001
         intersections = p.rayTestBatch([cp1+length*grasp_direction, cp2-length*grasp_direction],
+                                       [grasp_center, grasp_center])
+    contact1, normal1 = np.asarray(intersections[0][3]), np.asarray(intersections[0][4])
+    contact2, normal2 = np.asarray(intersections[1][3]), np.asarray(intersections[1][4])
+    if intersections[0][0] != obj.obj_id or intersections[1][0] != obj.obj_id:
+        print('Warning! The retrieved contact points do not belong to the target object.')
+    return contact1, normal1, contact2, normal2
+
+
+def get_contact_points_from_center(grasp_center, grasp_direction, obj):
+    length = 0.001
+    intersections = p.rayTestBatch([grasp_center+length*grasp_direction, grasp_center-length*grasp_direction],
+                                   [grasp_center, grasp_center])
+    while intersections[0][0] == -1 or intersections[1][0] == -1:
+        length += 0.001
+        intersections = p.rayTestBatch([grasp_center+length*grasp_direction, grasp_center-length*grasp_direction],
                                        [grasp_center, grasp_center])
     contact1, normal1 = np.asarray(intersections[0][3]), np.asarray(intersections[0][4])
     contact2, normal2 = np.asarray(intersections[1][3]), np.asarray(intersections[1][4])
