@@ -17,6 +17,8 @@ import os
 
 
 def main(args):
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
     os.environ['CUDA_VISIBLE_DEVICES'] = args.cuda_device
     with open(args.config, 'r') as config_file:
         cfg = json.load(config_file)
@@ -120,44 +122,44 @@ def main(args):
             # noise_depth = camera.add_noise(depth)
             cam.sample_a_pose_from_a_sphere(np.array(cfg['camera']['target_position']),
                                             cfg['camera']['eye_position'][-1])
-        curr_anti_score, col = 0.0, 1
         for ri, di, pi, ii, idx in zip(rgb_list, depth_list, pose_list, intr_list, range(len(intr_list))):
             ri = ri[..., 0:3].astype(np.float32)
             di = cam.add_noise(di).astype(np.float32)
             pi, ii = pi.astype(np.float32), ii.astype(np.float32)
             tsdf.integrate(di, ii, pi, rgb=ri)
-            if idx in cfg['test']['test_volume']:
-                cp1, cp2 = sample_contact_points(tsdf)
-                ids_cp1, ids_cp2 = tsdf.get_ids(cp1), tsdf.get_ids(cp2)
-                sample = dict()
-                sample['sdf_volume'] = tsdf.gaussian_blur(tsdf.post_processed_volume).unsqueeze(dim=0).unsqueeze(dim=0)
-                sample['ids_cp1'] = ids_cp1.permute((1, 0)).unsqueeze(dim=0).unsqueeze(dim=-1)
-                sample['ids_cp2'] = ids_cp2.permute((1, 0)).unsqueeze(dim=0).unsqueeze(dim=-1)
-                out = torch.squeeze(cpn.forward(sample))
-                pos, rot, width, cp1, cp2 = select_gripper_pose(tsdf, pg.vertex_sets, out, cp1, cp2, cfg['gripper']['depth'])
-                end_point_pos = pos + rot[:, 2] * cfg['gripper']['depth']
-                closest_obj = get_closest_obj(end_point_pos, static_list)
-                contact1, normal1, contact2, normal2 = get_contact_points(cp1, cp2, closest_obj)
-                grasp_direction = contact2 - contact1
-                grasp_direction = grasp_direction / np.linalg.norm(grasp_direction)
-                curr_anti_score = np.abs(grasp_direction @ normal1) * np.abs(grasp_direction @ normal2)
-                # uncomment for visualization
-                # quat = Rotation.from_matrix(rot).as_quat()
-                # pg.set_pose(pos, quat)
-                # pg.set_gripper_width(width + 0.02)
-                # s1 = add_sphere(contact1)
-                # l1 = p.addUserDebugLine(contact1 - 0.01 * normal1, contact1 + 0.01 * normal1)
-                # s2 = add_sphere(contact2)
-                # l2 = p.addUserDebugLine(contact2 - 0.01 * normal2, contact2 + 0.01 * normal2)
-                # closest_obj.change_color()
-                # p.removeBody(s1), p.removeBody(s2), p.removeUserDebugItem(l1), p.removeUserDebugItem(l2)
-                # tsdf.write_mesh('out.ply', *tsdf.compute_mesh(step_size=1))
-                print('current antipodal score: {:04f} given {} view(s)'.format(curr_anti_score, idx))
-                col = pg.is_collided(tray.get_tray_ids())
-                print('is collided: {}'.format(col))
-                pg.set_pose([-1, 0, -1], [0, 0, 0, 1])
+        cp1, cp2 = sample_contact_points(tsdf)
+        ids_cp1, ids_cp2 = tsdf.get_ids(cp1), tsdf.get_ids(cp2)
+        sample = dict()
+        sample['sdf_volume'] = tsdf.gaussian_blur(tsdf.post_processed_volume).unsqueeze(dim=0).unsqueeze(dim=0)
+        sample['ids_cp1'] = ids_cp1.permute((1, 0)).unsqueeze(dim=0).unsqueeze(dim=-1)
+        sample['ids_cp2'] = ids_cp2.permute((1, 0)).unsqueeze(dim=0).unsqueeze(dim=-1)
+        out = torch.squeeze(cpn.forward(sample))
+        pos, rot, width, cp1, cp2 = select_gripper_pose(tsdf, pg.vertex_sets, out, cp1, cp2, cfg['gripper']['depth'])
+        end_point_pos = pos + rot[:, 2] * cfg['gripper']['depth']
+        closest_obj = get_closest_obj(end_point_pos, static_list)
+        contact1, normal1, contact2, normal2 = get_contact_points(cp1, cp2, closest_obj)
+        grasp_direction = contact2 - contact1
+        grasp_direction = grasp_direction / np.linalg.norm(grasp_direction)
+        curr_anti_score = np.abs(grasp_direction @ normal1) * np.abs(grasp_direction @ normal2)
+        # uncomment for visualization
+        quat = Rotation.from_matrix(rot).as_quat()
+        pg.set_pose(pos, quat)
+        pg.set_gripper_width(width + 0.02)
+        # l0 = p.addUserDebugLine(contact1, contact2)
+        # s1 = add_sphere(contact1)
+        # l1 = p.addUserDebugLine(contact1 - 0.01 * normal1, contact1 + 0.01 * normal1)
+        # s2 = add_sphere(contact2)
+        # l2 = p.addUserDebugLine(contact2 - 0.01 * normal2, contact2 + 0.01 * normal2)
+        # p.removeBody(s1), p.removeBody(s2)
+        # p.removeUserDebugItem(l0), p.removeUserDebugItem(l1), p.removeUserDebugItem(l2)
+        # closest_obj.change_color()
+        # tsdf.write_mesh('out.ply', *tsdf.compute_mesh(step_size=1))
+        print('current antipodal score: {:04f} given {} view(s)'.format(curr_anti_score, len(intr_list)))
+        col = pg.is_collided(tray.get_tray_ids())
+        print('is collided: {}'.format(col))
+        pg.set_pose([-1, 0, -1], [0, 0, 0, 1])
         avg_anti_score = (curr_anti_score + avg_anti_score * i) / (i + 1)
-        print('# of trials: {} | current average antipodal scorewho: {:04f}'.format(i, avg_anti_score))
+        print('# of trials: {} | current average antipodal score: {:04f}'.format(i, avg_anti_score))
         col_free_rate = (1 - int(col) + col_free_rate * i) / (i + 1)
         print('# of trials: {} | current average collision free rate: {:04f}'.format(i, col_free_rate))
         p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
@@ -194,4 +196,8 @@ if __name__ == '__main__':
                         default='0',
                         type=str,
                         help='id of nvidia device.')
+    parser.add_argument('--seed',
+                        default=177,
+                        type=int,
+                        help='random seed for torch and numpy random number generator.')
     main(parser.parse_args())
