@@ -1,9 +1,9 @@
-pybullet
-torch
-scikit-image
+pybullet==3.2.1
+torch==1.10.2
+scikit-image==0.19.1
 matplotlib
-scipy
-trimesh
+scipy==1.7.3
+trimesh==3.9.35
 pymeshlab==2022.2.post2
 numpy
 tensorboard
