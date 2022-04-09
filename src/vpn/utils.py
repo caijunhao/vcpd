@@ -1,4 +1,5 @@
 from scipy.spatial.transform import Rotation as R
+from functools import partial
 from torch.nn.functional import grid_sample
 from itertools import count
 import numpy as np
@@ -272,3 +273,91 @@ def group_and_select_poses(poses, scores, threshold=0.02):
             num_group += 1
     g = sorted(g.values(), key=lambda d: d['num_pts'], reverse=True)
     return g
+
+
+class DiscretizedGripper(object):
+    def __init__(self, cfg):
+        self.num_sample = cfg['num_sample']
+        self.hand_outer_diameter = cfg['hand_outer_diameter']
+        self.hand_height = cfg['hand_height']
+        self.hand_depth = cfg['hand_depth']
+        self.finger_width = cfg['finger_width']
+        self.inner_diameter = self.hand_outer_diameter - 2 * self.finger_width
+        sample_ids = np.arange(self.num_sample)
+        ids = np.stack(np.meshgrid(sample_ids, sample_ids, sample_ids, indexing='ij'), axis=3).reshape(-1, 3)  # N * 3
+        ids = ids / self.num_sample - 0.5  # [-0.5, 0.5)
+        body_shape = np.array([self.hand_outer_diameter,
+                               self.hand_height,
+                               self.finger_width], dtype=np.float32).reshape(1, 3)
+        left_shape = right_shape = np.array([self.finger_width,
+                                             self.hand_height,
+                                             self.hand_depth], dtype=np.float32).reshape(1, 3)
+        inner_shape = np.array([self.inner_diameter,
+                                self.hand_height,
+                                self.hand_depth], dtype=np.float32).reshape(1, 3)
+        left_origin = np.array([-self.hand_outer_diameter / 2 + self.finger_width / 2,
+                                0,
+                                self.finger_width / 2 + self.hand_depth / 2], dtype=np.float32).reshape(1, 3)
+        right_origin = np.array([self.hand_outer_diameter / 2 - self.finger_width / 2,
+                                 0,
+                                 self.finger_width / 2 + self.hand_depth / 2], dtype=np.float32).reshape(1, 3)
+        inner_origin = np.array([0,
+                                 0,
+                                 self.finger_width / 2 + self.hand_depth / 2], dtype=np.float32).reshape(1, 3)
+        body = ids * body_shape
+        left = left_origin + ids * left_shape
+        right = right_origin + ids * right_shape
+        inner = inner_origin + ids * inner_shape
+        self._inner = inner  # N * 3
+        self._base = np.concatenate([body, left, right, inner], axis=0).astype(np.float32)  # 4N * 3
+        self.num_pts = self._base.shape[0]
+        # random perturbation
+        self.rand_x = partial(np.random.uniform, cfg['x_min'], cfg['x_max'])
+        self.rand_y = partial(np.random.uniform, cfg['y_min'], cfg['y_max'])
+        self.rand_z = partial(np.random.uniform, cfg['z_min'], cfg['z_max'])
+        self.rand_a = partial(np.random.uniform,
+                              np.deg2rad(cfg['alpha_min']),
+                              np.deg2rad(cfg['alpha_max']))
+        self.rand_b = partial(np.random.uniform,
+                              np.deg2rad(cfg['beta_min']),
+                              np.deg2rad(cfg['beta_max']))
+        self.rand_g = partial(np.random.uniform,
+                              np.deg2rad(cfg['gamma_min']),
+                              np.deg2rad(cfg['gamma_max']))
+
+    def sample_perturbation(self, num_pose):
+        delta_trans = np.stack([self.rand_x(num_pose),
+                                self.rand_y(num_pose),
+                                self.rand_z(num_pose)], axis=1).astype(np.float32)
+        delta_euler = np.stack([self.rand_g(num_pose),
+                                self.rand_b(num_pose),
+                                self.rand_a(num_pose)], axis=1).astype(np.float32)
+        delta_rot = euler2rot(delta_euler, seq='ZYX')
+        return delta_trans, delta_rot
+
+    def sample_perturbed_grippers(self, trans, rot, inner_only=False):
+        """
+        Sample points of grippers with perturbation given ground truth translations and rotation matrices
+        :param trans: An N*3-d numpy array representing the positions of the grippers
+        :param rot: An N*3*3-d numpy array representing the rotation matrices of grippers
+        :param inner_only: Whether to sample points for inner region only
+        :return: Two N*self.num_pts*3-d numpy arrays representing the positions of
+        sample points of grippers without and with perturbation respectively,
+        an N*3-d numpy array representing the perturbed translations,
+        and an N*3*3-d numpy representing the perturbed rotation matrices.
+        """
+        pos = self.sample_grippers(trans, rot, inner_only)
+        num_pose = trans.shape[0]
+        delta_trans, delta_rot = self.sample_perturbation(num_pose)
+        perturbed_pos = np.matmul(pos, delta_rot.transpose((0, 2, 1))) + delta_trans.reshape((num_pose, 1, 3))
+        return pos, perturbed_pos, delta_trans, delta_rot
+
+    def sample_grippers(self, trans, rot, inner_only=False):
+        assert trans.shape[0] == rot.shape[0]
+        num_pose = trans.shape[0]
+        if inner_only:
+            base_pos = np.stack([self._inner] * num_pose, axis=0)  # num_pose * self.num_pts * 3
+        else:
+            base_pos = np.stack([self._base] * num_pose, axis=0)  # num_pose * self.num_pts * 3
+        pos = np.matmul(base_pos, rot.transpose((0, 2, 1))) + trans.reshape(num_pose, 1, 3)
+        return pos.astype(np.float32)

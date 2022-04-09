@@ -1,7 +1,6 @@
 from scipy.spatial.transform.rotation import Rotation
 from vpn.model import VPN, RefineNetV0
-from vpn.utils import rank_and_group_poses
-from cpn.utils import sample_contact_points, select_gripper_pose
+from vpn.utils import rank_and_group_poses, DiscretizedGripper
 from sim.camera import Camera
 from sim.objects import RigidObject, PandaGripper
 from sim.tray import Tray
@@ -39,13 +38,17 @@ def main(args):
     cam = Camera(**cfg['camera'])
     pg = PandaGripper('assets')
     pg.set_pose([-2, -2, -2], [0, 0, 0, 1])
+    dg = DiscretizedGripper(cfg['refine'])
     mesh_list = os.listdir(args.mesh)
     angles = np.arange(cfg['num_angle']) / cfg['num_angle'] * 2 * np.pi
     # tsdf initialization
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = VPN()
-    model.load_network_state_dict(device=device, pth_file=args.model_path)
-    model.to(device)
+    vpn = VPN()
+    rn = RefineNetV0(num_sample=cfg['refine']['num_sample'])
+    vpn.load_network_state_dict(device=device, pth_file=args.vpn_path)
+    rn.load_network_state_dict(device=device, pth_file=args.rn_path)
+    vpn.to(device)
+    rn.to(device)
     vol_bnd = np.array([cfg['sdf']['x_min'], cfg['sdf']['y_min'], cfg['sdf']['z_min'],
                         cfg['sdf']['x_max'], cfg['sdf']['y_max'], cfg['sdf']['z_max']]).reshape(2, 3)
     voxel_length = cfg['sdf']['resolution']
@@ -53,8 +56,8 @@ def main(args):
     panda_gripper_mesh = trimesh.load_mesh('assets/panda_gripper_col4.ply')
     gpr_pts = torch.from_numpy(panda_gripper_mesh.vertices.astype(np.float32)).to(device)
     i = 0
-    avg_anti_score = 0.0
-    col_free_rate = 0.0
+    avg_anti_score_vpn, avg_anti_score_rn = 0.0, 0.0
+    col_free_rate_vpn, col_free_rate_rn = 0.0, 0.0
     while i < args.num_test:
         dynamic_list = list()
         static_list = list()
@@ -123,8 +126,10 @@ def main(args):
             rgb, depth, mask = cam.get_camera_image()
             rgb_list.append(rgb), depth_list.append(depth), pose_list.append(cam.pose), intr_list.append(cam.intrinsic)
             # noise_depth = camera.add_noise(depth)
-            cam.sample_a_pose_from_a_sphere(np.array(cfg['camera']['target_position']),
-                                            cfg['camera']['eye_position'][-1])
+            cam.sample_a_position(cfg['camera']['x_min'], cfg['camera']['x_max'],
+                                  cfg['camera']['y_min'], cfg['camera']['y_max'],
+                                  cfg['camera']['z_min'], cfg['camera']['z_max'],
+                                  cfg['camera']['up_vector'])
         curr_anti_score, col = 0.0, 1
         for ri, di, pi, ii, idx in zip(rgb_list, depth_list, pose_list, intr_list, range(len(intr_list))):
             ri = ri[..., 0:3].astype(np.float32)
@@ -143,14 +148,14 @@ def main(args):
         sample['occupancy_volume'][sample['sdf_volume'] <= 0] = 1
         sample['origin'] = tsdf.origin
         sample['resolution'] = torch.tensor([[tsdf.res]], dtype=torch.float32, device=device)
-        out = torch.sigmoid(model.forward(sample))
+        out = torch.sigmoid(vpn.forward(sample))
         groups = rank_and_group_poses(sample, out, device, gpr_pts, collision_check=True)
         if groups is None:
             continue
         score, pose = groups[0]['queue'].get()
         pos, rot0 = pose[0:3], Rotation.from_quat(pose[6:10]).as_matrix()
         rot = rot0 @ basic_rot_mat(np.pi / 2, axis='z').astype(np.float32)
-        gripper_pos = pos - 0.077 * rot[:, 2]
+        gripper_pos = pos - 0.08 * rot[:, 2]
         end_point_pos = gripper_pos + rot[:, 2] * cfg['gripper']['depth']
         closest_obj = get_closest_obj(end_point_pos, static_list)
         contact1, normal1, contact2, normal2 = get_contact_points_from_center(end_point_pos,
@@ -162,7 +167,53 @@ def main(args):
         # uncomment for visualization
         quat = Rotation.from_matrix(rot).as_quat()
         pg.set_pose(gripper_pos, quat)
-        # pg.set_gripper_width(width + 0.02)
+        # l0 = p.addUserDebugLine(contact1, contact2)
+        # s1 = add_sphere(contact1)
+        # l1 = p.addUserDebugLine(contact1 - 0.01 * normal1, contact1 + 0.01 * normal1)
+        # s2 = add_sphere(contact2)
+        # l2 = p.addUserDebugLine(contact2 - 0.01 * normal2, contact2 + 0.01 * normal2)
+        # p.removeBody(s1), p.removeBody(s2)
+        # p.removeUserDebugItem(l0), p.removeUserDebugItem(l1), p.removeUserDebugItem(l2)
+        # closest_obj.change_color()
+        # tsdf.write_mesh('out.ply', *tsdf.compute_mesh(step_size=1))
+        print('current antipodal score: {:04f} given {} view(s)'.format(curr_anti_score, len(intr_list)))
+        col = pg.is_collided(tray.get_tray_ids())
+        print('is collided: {}'.format(col))
+        # pg.set_pose([-1, 0, -1], [0, 0, 0, 1])
+        avg_anti_score_vpn = (curr_anti_score + avg_anti_score_vpn * i) / (i + 1)
+        print('# of trials: {} | current average antipodal score for vpn: {:04f}'.format(i, avg_anti_score_vpn))
+        col_free_rate_vpn = (1 - int(col) + col_free_rate_vpn * i) / (i + 1)
+        print('# of trials: {} | current average collision free rate for vpn: {:04f}'.format(i, col_free_rate_vpn))
+        # grasp pose refinement network
+        for _ in range(5):
+            trans = (pose[0:3] + pose[3:6] * 0.01).astype(np.float32)
+            rot = Rotation.from_quat(pose[6:10]).as_matrix().astype(np.float32)
+            pos = dg.sample_grippers(trans.reshape(1, 3), rot.reshape(1, 3, 3), inner_only=False)
+            pos = np.expand_dims(pos.transpose((2, 1, 0)), axis=0)  # 1 * 3 * 2048 * 1
+            sample['perturbed_pos'] = torch.from_numpy(pos).to(device)
+            delta_rot = rn(sample)
+            delta_rot = torch.squeeze(delta_rot).detach().cpu().numpy()
+            rot_recover = rot @ delta_rot
+            approach_recover = rot_recover[:, 2]
+            quat_recover = Rotation.from_matrix(rot_recover).as_quat()
+            trans_recover = trans
+            # trans_recover[2] -= 0.005
+            pos_recover = pose[0:3]
+            pose = np.concatenate([pos_recover, -approach_recover, quat_recover])
+        pos, rot0 = pose[0:3], Rotation.from_quat(pose[6:10]).as_matrix()
+        rot = rot0 @ basic_rot_mat(np.pi / 2, axis='z').astype(np.float32)
+        gripper_pos = pos - 0.08 * rot[:, 2]
+        end_point_pos = gripper_pos + rot[:, 2] * cfg['gripper']['depth']
+        closest_obj = get_closest_obj(end_point_pos, static_list)
+        contact1, normal1, contact2, normal2 = get_contact_points_from_center(end_point_pos,
+                                                                              rot[:, 1],
+                                                                              closest_obj)
+        grasp_direction = contact2 - contact1
+        grasp_direction = grasp_direction / np.linalg.norm(grasp_direction)
+        curr_anti_score = np.abs(grasp_direction @ normal1) * np.abs(grasp_direction @ normal2)
+        # uncomment for visualization
+        quat = Rotation.from_matrix(rot).as_quat()
+        pg.set_pose(gripper_pos, quat)
         # l0 = p.addUserDebugLine(contact1, contact2)
         # s1 = add_sphere(contact1)
         # l1 = p.addUserDebugLine(contact1 - 0.01 * normal1, contact1 + 0.01 * normal1)
@@ -176,10 +227,10 @@ def main(args):
         col = pg.is_collided(tray.get_tray_ids())
         print('is collided: {}'.format(col))
         pg.set_pose([-1, 0, -1], [0, 0, 0, 1])
-        avg_anti_score = (curr_anti_score + avg_anti_score * i) / (i + 1)
-        print('# of trials: {} | current average antipodal scorewho: {:04f}'.format(i, avg_anti_score))
-        col_free_rate = (1 - int(col) + col_free_rate * i) / (i + 1)
-        print('# of trials: {} | current average collision free rate: {:04f}'.format(i, col_free_rate))
+        avg_anti_score_rn = (curr_anti_score + avg_anti_score_rn * i) / (i + 1)
+        print('# of trials: {} | current average antipodal score for rn: {:04f}'.format(i, avg_anti_score_rn))
+        col_free_rate_rn = (1 - int(col) + col_free_rate_rn * i) / (i + 1)
+        print('# of trials: {} | current average collision free rate for rn: {:04f}'.format(i, col_free_rate_rn))
         p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
         [p.removeBody(o.obj_id) for o in dynamic_list]
         [p.removeBody(o.obj_id) for o in static_list]
@@ -198,10 +249,14 @@ if __name__ == '__main__':
                         type=str,
                         required=True,
                         help='path to the mesh set')
-    parser.add_argument('--model_path',
+    parser.add_argument('--vpn_path',
                         default='',
                         type=str,
-                        help='path to the pretrained model.')
+                        help='path to trained vpn model.')
+    parser.add_argument('--rn_path',
+                        default='',
+                        type=str,
+                        help='path to trained refine net model.')
     parser.add_argument('--num_test',
                         type=int,
                         default=1000,
