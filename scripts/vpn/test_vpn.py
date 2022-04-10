@@ -161,27 +161,30 @@ def main(args):
         score, pose = groups[0]['queue'].get()
         pos, rot0 = pose[0:3], Rotation.from_quat(pose[6:10]).as_matrix()
         rot = rot0 @ basic_rot_mat(np.pi / 2, axis='z').astype(np.float32)
+        quat = Rotation.from_matrix(rot).as_quat()
         gripper_pos = pos - 0.08 * rot[:, 2]
         end_point_pos = gripper_pos + rot[:, 2] * cfg['gripper']['depth']
         closest_obj = get_closest_obj(end_point_pos, static_list)
         contact1, normal1, contact2, normal2 = get_contact_points_from_center(end_point_pos,
                                                                               rot[:, 1],
                                                                               closest_obj)
-        grasp_direction = contact2 - contact1
-        grasp_direction = grasp_direction / np.linalg.norm(grasp_direction)
-        curr_anti_score = np.abs(grasp_direction @ normal1) * np.abs(grasp_direction @ normal2)
-        # uncomment for visualization
-        quat = Rotation.from_matrix(rot).as_quat()
+        if contact1 is not None:
+            grasp_direction = contact2 - contact1
+            grasp_direction = grasp_direction / np.linalg.norm(grasp_direction)
+            curr_anti_score = np.abs(grasp_direction @ normal1) * np.abs(grasp_direction @ normal2)
+            # uncomment for visualization
+            # l0 = p.addUserDebugLine(contact1, contact2)
+            # s1 = add_sphere(contact1)
+            # l1 = p.addUserDebugLine(contact1 - 0.01 * normal1, contact1 + 0.01 * normal1)
+            # s2 = add_sphere(contact2)
+            # l2 = p.addUserDebugLine(contact2 - 0.01 * normal2, contact2 + 0.01 * normal2)
+            # p.removeBody(s1), p.removeBody(s2)
+            # p.removeUserDebugItem(l0), p.removeUserDebugItem(l1), p.removeUserDebugItem(l2)
+            # closest_obj.change_color()
+            # tsdf.write_mesh('out.ply', *tsdf.compute_mesh(step_size=1))
+        else:
+            curr_anti_score = 0
         pg.set_pose(gripper_pos, quat)
-        # l0 = p.addUserDebugLine(contact1, contact2)
-        # s1 = add_sphere(contact1)
-        # l1 = p.addUserDebugLine(contact1 - 0.01 * normal1, contact1 + 0.01 * normal1)
-        # s2 = add_sphere(contact2)
-        # l2 = p.addUserDebugLine(contact2 - 0.01 * normal2, contact2 + 0.01 * normal2)
-        # p.removeBody(s1), p.removeBody(s2)
-        # p.removeUserDebugItem(l0), p.removeUserDebugItem(l1), p.removeUserDebugItem(l2)
-        # closest_obj.change_color()
-        # tsdf.write_mesh('out.ply', *tsdf.compute_mesh(step_size=1))
         print('current antipodal score: {:04f} given {} view(s)'.format(curr_anti_score, len(intr_list)))
         col = pg.is_collided(tray.get_tray_ids())
         print('is collided: {}'.format(col))
@@ -211,24 +214,27 @@ def main(args):
         gripper_pos = pos - 0.08 * rot[:, 2]
         end_point_pos = gripper_pos + rot[:, 2] * cfg['gripper']['depth']
         closest_obj = get_closest_obj(end_point_pos, static_list)
+        quat = Rotation.from_matrix(rot).as_quat()
         contact1, normal1, contact2, normal2 = get_contact_points_from_center(end_point_pos,
                                                                               rot[:, 1],
                                                                               closest_obj)
-        grasp_direction = contact2 - contact1
-        grasp_direction = grasp_direction / np.linalg.norm(grasp_direction)
-        curr_anti_score = np.abs(grasp_direction @ normal1) * np.abs(grasp_direction @ normal2)
-        # uncomment for visualization
-        quat = Rotation.from_matrix(rot).as_quat()
+        if contact1 is not None:
+            grasp_direction = contact2 - contact1
+            grasp_direction = grasp_direction / np.linalg.norm(grasp_direction)
+            curr_anti_score = np.abs(grasp_direction @ normal1) * np.abs(grasp_direction @ normal2)
+            # uncomment for visualization
+            # l0 = p.addUserDebugLine(contact1, contact2)
+            # s1 = add_sphere(contact1)
+            # l1 = p.addUserDebugLine(contact1 - 0.01 * normal1, contact1 + 0.01 * normal1)
+            # s2 = add_sphere(contact2)
+            # l2 = p.addUserDebugLine(contact2 - 0.01 * normal2, contact2 + 0.01 * normal2)
+            # p.removeBody(s1), p.removeBody(s2)
+            # p.removeUserDebugItem(l0), p.removeUserDebugItem(l1), p.removeUserDebugItem(l2)
+            # closest_obj.change_color()
+            # tsdf.write_mesh('out.ply', *tsdf.compute_mesh(step_size=1))
+        else:
+            curr_anti_score = 0
         pg.set_pose(gripper_pos, quat)
-        # l0 = p.addUserDebugLine(contact1, contact2)
-        # s1 = add_sphere(contact1)
-        # l1 = p.addUserDebugLine(contact1 - 0.01 * normal1, contact1 + 0.01 * normal1)
-        # s2 = add_sphere(contact2)
-        # l2 = p.addUserDebugLine(contact2 - 0.01 * normal2, contact2 + 0.01 * normal2)
-        # p.removeBody(s1), p.removeBody(s2)
-        # p.removeUserDebugItem(l0), p.removeUserDebugItem(l1), p.removeUserDebugItem(l2)
-        # closest_obj.change_color()
-        # tsdf.write_mesh('out.ply', *tsdf.compute_mesh(step_size=1))
         print('current antipodal score: {:04f} given {} view(s)'.format(curr_anti_score, len(intr_list)))
         col = pg.is_collided(tray.get_tray_ids())
         print('is collided: {}'.format(col))

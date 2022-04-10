@@ -104,12 +104,16 @@ def get_contact_points(cp1, cp2, obj):
     grasp_center = (cp1 + cp2) / 2
     grasp_direction = grasp_direction / np.linalg.norm(grasp_direction)
     length = 0.001
+    half_w = 0.07
     intersections = p.rayTestBatch([cp1+length*grasp_direction, cp2-length*grasp_direction],
                                    [grasp_center, grasp_center])
-    while intersections[0][0] == -1 or intersections[1][0] == -1:
+    while length < half_w and np.logical_or(intersections[0][0] == -1, intersections[1][0] == -1):
         length += 0.001
         intersections = p.rayTestBatch([cp1+length*grasp_direction, cp2-length*grasp_direction],
                                        [grasp_center, grasp_center])
+    if abs(length - half_w) < 1e-7:
+        print('no contact point found, return None.')
+        return None, None, None, None
     contact1, normal1 = np.asarray(intersections[0][3]), np.asarray(intersections[0][4])
     contact2, normal2 = np.asarray(intersections[1][3]), np.asarray(intersections[1][4])
     if intersections[0][0] != obj.obj_id or intersections[1][0] != obj.obj_id:
@@ -119,12 +123,16 @@ def get_contact_points(cp1, cp2, obj):
 
 def get_contact_points_from_center(grasp_center, grasp_direction, obj):
     length = 0.001
+    half_w = 0.07
     intersections = p.rayTestBatch([grasp_center+length*grasp_direction, grasp_center-length*grasp_direction],
                                    [grasp_center, grasp_center])
-    while intersections[0][0] == -1 or intersections[1][0] == -1:
+    while length < half_w and np.logical_or(intersections[0][0] == -1, intersections[1][0] == -1):
         length += 0.001
         intersections = p.rayTestBatch([grasp_center+length*grasp_direction, grasp_center-length*grasp_direction],
                                        [grasp_center, grasp_center])
+    if abs(length - half_w) < 1e-7:
+        print('no contact point found, return None.')
+        return None, None, None, None
     contact1, normal1 = np.asarray(intersections[0][3]), np.asarray(intersections[0][4])
     contact2, normal2 = np.asarray(intersections[1][3]), np.asarray(intersections[1][4])
     if intersections[0][0] != obj.obj_id or intersections[1][0] != obj.obj_id:
