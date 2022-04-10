@@ -138,13 +138,16 @@ def main(args):
         end_point_pos = pos + rot[:, 2] * cfg['gripper']['depth']
         closest_obj = get_closest_obj(end_point_pos, static_list)
         contact1, normal1, contact2, normal2 = get_contact_points(cp1, cp2, closest_obj)
-        grasp_direction = contact2 - contact1
-        grasp_direction = grasp_direction / np.linalg.norm(grasp_direction)
-        curr_anti_score = np.abs(grasp_direction @ normal1) * np.abs(grasp_direction @ normal2)
+        if contact1 is not None:
+            grasp_direction = contact2 - contact1
+            grasp_direction = grasp_direction / np.linalg.norm(grasp_direction)
+            curr_anti_score = np.abs(grasp_direction @ normal1) * np.abs(grasp_direction @ normal2)
+        else:
+            curr_anti_score = 0
         # uncomment for visualization
         quat = Rotation.from_matrix(rot).as_quat()
         pg.set_pose(pos, quat)
-        pg.set_gripper_width(width + 0.02)
+        pg.set_gripper_width(width)
         # l0 = p.addUserDebugLine(contact1, contact2)
         # s1 = add_sphere(contact1)
         # l1 = p.addUserDebugLine(contact1 - 0.01 * normal1, contact1 + 0.01 * normal1)
