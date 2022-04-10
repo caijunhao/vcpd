@@ -151,6 +151,12 @@ def main(args):
         out = torch.sigmoid(vpn.forward(sample))
         groups = rank_and_group_poses(sample, out, device, gpr_pts, collision_check=True)
         if groups is None:
+            p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
+            [p.removeBody(o.obj_id) for o in dynamic_list]
+            [p.removeBody(o.obj_id) for o in static_list]
+            p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
+            pg.set_pose([-1, 0, -1], [0, 0, 0, 1])
+            tsdf.reset()
             continue
         score, pose = groups[0]['queue'].get()
         pos, rot0 = pose[0:3], Rotation.from_quat(pose[6:10]).as_matrix()
