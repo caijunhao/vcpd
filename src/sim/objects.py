@@ -139,6 +139,7 @@ class PandaGripper(object):
                 for gripper_id in gripper_ids:
                     contacts = p.getClosestPoints(gripper_id, obj_id, threshold)
                     if len(contacts) != 0:
+                        p.changeVisualShape(obj_id, -1, rgbaColor=[1, 0, 0, 1])
                         return True
         return False
 
