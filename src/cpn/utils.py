@@ -42,24 +42,27 @@ def extract_sdf(pts, volumes, origin, resolution, mode='bilinear', padding_mode=
 def sample_contact_points(tsdf, th_a=30, th_s=0.2, start=0.01, end=0.06, num_step=50):
     dtype = tsdf.dtype
     dev = tsdf.dev
-    th_a = np.deg2rad(th_a)
+    th_a = torch.deg2rad(torch.tensor(th_a, dtype=dtype, device=dev))
     v, _, n, _ = tsdf.compute_mesh(step_size=3)
-    # filter out contact points whose surface normals are outside the angle threshold
-    flag_a = np.abs(n[:, 2]) <= np.cos(np.pi / 2 - th_a)
-    v, n = v[flag_a], n[flag_a]
     v, n = torch.tensor(v, dtype=dtype, device=dev), torch.tensor(n, dtype=dtype, device=dev)
+    flag_s = torch.abs(tsdf.extract_sdf(v)) < th_s
+    v, n = v[flag_s], n[flag_s]
+    # filter out contact points whose surface normals are outside the angle threshold
+    flag_a = torch.abs(n[:, 2]) <= torch.cos(torch.pi / 2 - th_a)
+    v, n = v[flag_a], n[flag_a]
     stride = (end - start) / num_step
     samples = n.unsqueeze(dim=1) * (start + torch.arange(num_step, dtype=dtype, device=dev).reshape(1, -1, 1) * stride)
     vs = v.unsqueeze(dim=1) - samples  # N * M * 3
     num_v = vs.shape[0]
     sdv = tsdf.extract_sdf(vs.view(-1, 3)).view(num_v, num_step)  # N * M
+    sign = (sdv >= 0).to(torch.int)
     min_sdv, min_ids = torch.min(torch.abs(sdv), dim=1)  # N, N
     flag = torch.logical_and(min_sdv < th_s, torch.logical_and(min_ids > 0, min_ids < num_step - 1))
     v, vs, sdv, min_sdv, min_ids = v[flag], vs[flag], sdv[flag], min_sdv[flag], min_ids[flag]  # N'
     num_v = vs.shape[0]
     ids_plus_one, ids_minus_one = min_ids + 1, min_ids - 1
     v_ids = torch.arange(num_v, device=dev)
-    flag_sign = sdv[v_ids, ids_plus_one] - sdv[v_ids, ids_minus_one] > 0
+    flag_sign = (sdv[v_ids, ids_plus_one] - sdv[v_ids, ids_minus_one]) > 0
     v, vs, min_sdv, min_ids = v[flag_sign], vs[flag_sign], min_sdv[flag_sign], min_ids[flag_sign]  # N''
     num_v = vs.shape[0]
     v_ids = torch.arange(num_v, device=dev)
@@ -108,7 +111,9 @@ def select_gripper_pose(tsdf, pg, score, cp1, cp2, gripper_depth, num_angle=32, 
     delta_rots = basic_rots(angles, axis='y')  # num_angle * 3 * 3
     rots = torch.matmul(rot0.unsqueeze(dim=1), delta_rots.unsqueeze(dim=0))  # num_cp * num_angle * 3 * 3
     z_flag = rots[..., -1, -1] > 0
-    rots[z_flag, :, 0], rots[z_flag, :, 2] = -rots[z_flag, :, 0], -rots[z_flag, :, 2]
+    i, j = torch.meshgrid(torch.arange(num_cp, device=dev), torch.arange(num_angle, device=dev))
+    i, j = i[z_flag], j[z_flag]
+    rots[i, j, :, 0], rots[i, j, :, 2] = -rots[i, j, :, 0], -rots[i, j, :, 2]
     ys = rots[..., 1].unsqueeze(dim=2)  # num_cp * num_angle * 1 * 3
     n_h, n_l, n_r = pg['hand'].shape[0], pg['left_finger'].shape[0], pg['right_finger'].shape[0]
     vs = torch.from_numpy(np.concatenate([pg['hand'], pg['left_finger'], pg['right_finger']], axis=0)).to(dtype).to(dev)
@@ -117,9 +122,9 @@ def select_gripper_pose(tsdf, pg, score, cp1, cp2, gripper_depth, num_angle=32, 
     vs = torch.matmul(rots, vs.permute(1, 0).unsqueeze(0).unsqueeze(0)).permute(0, 1, 3, 2) + gripper_pos.unsqueeze(2)  # num_cp * num_angle * num_v * 3
     vs[..., n_h:n_h+n_l, :] = vs[..., n_h:n_h+n_l, :] - offset * ys  # left finger vertices
     vs[..., n_h+n_l:n_h+n_l+n_r, :] = vs[..., n_h+n_l:n_h+n_l+n_r, :] + offset * ys  # right finger vertices
-    sdv = tsdf.extract_sdf(vs.reshape(-1, 3)).reshape(num_cp, num_angle, num_v)
+    sdv = tsdf.extract_sdf(vs.reshape(-1, 3), gaussian_blur=True).reshape(num_cp, num_angle, num_v)
     num_free = torch.sum(sdv > 0, dim=-1)  # num_cp * num_angle
-    flag_s = num_free > torch.max(num_free) * 0.99
+    flag_s = num_free > torch.max(num_free) * 0.999
     rots = rots[flag_s]
     gripper_pos = gripper_pos[flag_s]
     width = torch.cat([width] * num_angle, dim=1)[flag_s]
@@ -135,7 +140,7 @@ def select_gripper_pose(tsdf, pg, score, cp1, cp2, gripper_depth, num_angle=32, 
     distance = distance[ids]
     pos = torch.stack([pos] * num_angle, dim=1)[flag_s]
     pos = pos[ids]
-    grasp_directions = rots[:, 1]
+    grasp_directions = rots[..., 1]
     cp1 = (pos + grasp_directions * distance.reshape(-1, 1) / 2)
     cp2 = (pos - grasp_directions * distance.reshape(-1, 1) / 2)
     # debug: sample contact points and visualize
