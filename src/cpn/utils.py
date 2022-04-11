@@ -148,33 +148,33 @@ def select_gripper_pose(tsdf, pg, score, cp1, cp2, gripper_depth,
     cp1 = (pos + grasp_directions * distance.reshape(-1, 1) / 2)
     cp2 = (pos - grasp_directions * distance.reshape(-1, 1) / 2)
     # debug: sample contact points and visualize
-    ids = torch.randperm(cp1.shape[0])[0:min(50, cp1.shape[0])]
-    selected_cp1, selected_cp2 = cp1[ids].cpu().numpy(), cp2[ids].cpu().numpy()
-    import pybullet as p
-    radius = 0.003
-    p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
-    cp1s = [p.createMultiBody(0,
-                              p.createCollisionShape(p.GEOM_SPHERE, radius),
-                              p.createVisualShape(p.GEOM_SPHERE, radius, rgbaColor=[1, 0, 0, 1]),
-                              basePosition=cp) for cp in selected_cp1]
-    p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
-    p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
-    cp2s = [p.createMultiBody(0,
-                              p.createCollisionShape(p.GEOM_SPHERE, radius),
-                              p.createVisualShape(p.GEOM_SPHERE, radius, rgbaColor=[0, 1, 0, 1]),
-                              basePosition=cp) for cp in selected_cp2]
-    p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
-    p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
-    lines = [p.addUserDebugLine(selected_cp1[pid], selected_cp2[pid],
-                                lineColorRGB=np.random.uniform(size=3),
-                                lineWidth=0.1) for pid in range(selected_cp2.shape[0])]
-    p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
-    p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
-    [p.removeBody(cp) for cp in cp1s]
-    [p.removeBody(cp) for cp in cp2s]
-    [p.removeUserDebugItem(line) for line in lines]
-    p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
-    del p
+    # ids = torch.randperm(cp1.shape[0])[0:min(50, cp1.shape[0])]
+    # selected_cp1, selected_cp2 = cp1[ids].cpu().numpy(), cp2[ids].cpu().numpy()
+    # import pybullet as p
+    # radius = 0.003
+    # p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
+    # cp1s = [p.createMultiBody(0,
+    #                           p.createCollisionShape(p.GEOM_SPHERE, radius),
+    #                           p.createVisualShape(p.GEOM_SPHERE, radius, rgbaColor=[1, 0, 0, 1]),
+    #                           basePosition=cp) for cp in selected_cp1]
+    # p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
+    # p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
+    # cp2s = [p.createMultiBody(0,
+    #                           p.createCollisionShape(p.GEOM_SPHERE, radius),
+    #                           p.createVisualShape(p.GEOM_SPHERE, radius, rgbaColor=[0, 1, 0, 1]),
+    #                           basePosition=cp) for cp in selected_cp2]
+    # p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
+    # p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
+    # lines = [p.addUserDebugLine(selected_cp1[pid], selected_cp2[pid],
+    #                             lineColorRGB=np.random.uniform(size=3),
+    #                             lineWidth=0.1) for pid in range(selected_cp2.shape[0])]
+    # p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
+    # p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
+    # [p.removeBody(cp) for cp in cp1s]
+    # [p.removeBody(cp) for cp in cp2s]
+    # [p.removeUserDebugItem(line) for line in lines]
+    # p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
+    # del p
     # /debug
     return gripper_pos[0].cpu().numpy(), rots[0].cpu().numpy(), width[0].cpu().numpy(), cp1[0].cpu().numpy(), cp2[0].cpu().numpy()
 
