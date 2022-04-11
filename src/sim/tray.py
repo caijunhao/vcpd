@@ -43,10 +43,10 @@ class Tray(object):
         self.change_color()
 
     def change_color(self, a=0.7):
+        rgb = [np.random.uniform(127 / 255, 248 / 255)] * 3
         for name in self.__dict__.keys():
             if 'piece' in name:
-                p.changeVisualShape(self.__getattribute__(name), -1,
-                                    rgbaColor=np.random.uniform(size=3).tolist() + [a])
+                p.changeVisualShape(self.__getattribute__(name), -1, rgbaColor=rgb + [a])
 
     def set_pose(self, position):
         curr_base_pos, _ = p.getBasePositionAndOrientation(self.__getattribute__('piece0'))
