@@ -111,7 +111,11 @@ def get_contact_points(cp1, cp2, obj):
         length += 0.001
         intersections = p.rayTestBatch([cp1+length*grasp_direction, cp2-length*grasp_direction],
                                        [grasp_center, grasp_center])
+        # l1 = p.addUserDebugLine(cp1+length*grasp_direction, grasp_center, lineColorRGB=[1, 0, 0])
+        # l2 = p.addUserDebugLine(cp2-length*grasp_direction, grasp_center, lineColorRGB=[0, 1, 0])
+        # p.removeUserDebugItem(l1), p.removeUserDebugItem(l2)
     if abs(length - half_w) < 1e-7:
+        p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
         print('no contact point found, return None.')
         return None, None, None, None
     contact1, normal1 = np.asarray(intersections[0][3]), np.asarray(intersections[0][4])
