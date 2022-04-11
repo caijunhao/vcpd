@@ -69,7 +69,9 @@ def sample_contact_points(tsdf, th_a=30, th_s=0.2, start=0.01, end=0.06, num_ste
     return v, vs[v_ids, min_ids]
 
 
-def select_gripper_pose(tsdf, pg, score, cp1, cp2, gripper_depth, num_angle=32, max_width=0.08):
+def select_gripper_pose(tsdf, pg, score, cp1, cp2, gripper_depth,
+                        num_angle=32, max_width=0.08,
+                        th_s=0.997, th_c=0.999):
     """
     Select collision-free pose according to the quality scores of the contact points.
     :param tsdf: the SDF instance
@@ -80,13 +82,15 @@ def select_gripper_pose(tsdf, pg, score, cp1, cp2, gripper_depth, num_angle=32, 
     :param gripper_depth:y[:, 0:2]
     :param num_angle: the number of discretized angles in x-z plane
     :param max_width:
+    :param th_s:
+    :param th_c:
     :return: the 7-DoF gripper pose with the highest grasp quality and free collision.
     """
     dtype = score.dtype
     dev = score.device
     score = torch.sigmoid(score)
     score, rank = torch.sort(score, descending=True)
-    th_s = score[0] * 0.97  # select top 3% contact points as candidates
+    th_s = score[0] * th_s  # select top 3% contact points as candidates
     rank = rank[score >= th_s]
     num_cp = rank.shape[0]
     cp1, cp2 = cp1[rank], cp2[rank]
@@ -124,7 +128,7 @@ def select_gripper_pose(tsdf, pg, score, cp1, cp2, gripper_depth, num_angle=32, 
     vs[..., n_h+n_l:n_h+n_l+n_r, :] = vs[..., n_h+n_l:n_h+n_l+n_r, :] + offset * ys  # right finger vertices
     sdv = tsdf.extract_sdf(vs.reshape(-1, 3), gaussian_blur=True).reshape(num_cp, num_angle, num_v)
     num_free = torch.sum(sdv > 0, dim=-1)  # num_cp * num_angle
-    flag_s = num_free > torch.max(num_free) * 0.999
+    flag_s = num_free > torch.max(num_free) * th_c
     rots = rots[flag_s]
     gripper_pos = gripper_pos[flag_s]
     width = torch.cat([width] * num_angle, dim=1)[flag_s]
@@ -144,33 +148,33 @@ def select_gripper_pose(tsdf, pg, score, cp1, cp2, gripper_depth, num_angle=32, 
     cp1 = (pos + grasp_directions * distance.reshape(-1, 1) / 2)
     cp2 = (pos - grasp_directions * distance.reshape(-1, 1) / 2)
     # debug: sample contact points and visualize
-    # ids = torch.randperm(cp1.shape[0])[0:min(50, cp1.shape[0])]
-    # selected_cp1, selected_cp2 = cp1[ids].cpu().numpy(), cp2[ids].cpu().numpy()
-    # import pybullet as p
-    # radius = 0.003
-    # p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
-    # cp1s = [p.createMultiBody(0,
-    #                           p.createCollisionShape(p.GEOM_SPHERE, radius),
-    #                           p.createVisualShape(p.GEOM_SPHERE, radius, rgbaColor=[1, 0, 0, 1]),
-    #                           basePosition=cp) for cp in selected_cp1]
-    # p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
-    # p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
-    # cp2s = [p.createMultiBody(0,
-    #                           p.createCollisionShape(p.GEOM_SPHERE, radius),
-    #                           p.createVisualShape(p.GEOM_SPHERE, radius, rgbaColor=[0, 1, 0, 1]),
-    #                           basePosition=cp) for cp in selected_cp2]
-    # p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
-    # p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
-    # lines = [p.addUserDebugLine(selected_cp1[pid], selected_cp2[pid],
-    #                             lineColorRGB=np.random.uniform(size=3),
-    #                             lineWidth=0.1) for pid in range(selected_cp2.shape[0])]
-    # p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
-    # p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
-    # [p.removeBody(cp) for cp in cp1s]
-    # [p.removeBody(cp) for cp in cp2s]
-    # [p.removeUserDebugItem(line) for line in lines]
-    # p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
-    # del p
+    ids = torch.randperm(cp1.shape[0])[0:min(50, cp1.shape[0])]
+    selected_cp1, selected_cp2 = cp1[ids].cpu().numpy(), cp2[ids].cpu().numpy()
+    import pybullet as p
+    radius = 0.003
+    p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
+    cp1s = [p.createMultiBody(0,
+                              p.createCollisionShape(p.GEOM_SPHERE, radius),
+                              p.createVisualShape(p.GEOM_SPHERE, radius, rgbaColor=[1, 0, 0, 1]),
+                              basePosition=cp) for cp in selected_cp1]
+    p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
+    p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
+    cp2s = [p.createMultiBody(0,
+                              p.createCollisionShape(p.GEOM_SPHERE, radius),
+                              p.createVisualShape(p.GEOM_SPHERE, radius, rgbaColor=[0, 1, 0, 1]),
+                              basePosition=cp) for cp in selected_cp2]
+    p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
+    p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
+    lines = [p.addUserDebugLine(selected_cp1[pid], selected_cp2[pid],
+                                lineColorRGB=np.random.uniform(size=3),
+                                lineWidth=0.1) for pid in range(selected_cp2.shape[0])]
+    p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
+    p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
+    [p.removeBody(cp) for cp in cp1s]
+    [p.removeBody(cp) for cp in cp2s]
+    [p.removeUserDebugItem(line) for line in lines]
+    p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
+    del p
     # /debug
     return gripper_pos[0].cpu().numpy(), rots[0].cpu().numpy(), width[0].cpu().numpy(), cp1[0].cpu().numpy(), cp2[0].cpu().numpy()
 
