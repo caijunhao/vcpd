@@ -79,7 +79,7 @@
         "antipodal": 1.0,
         "huber": 100,
         "scale": 0.4,
-        "num_sample": 256
+        "num_sample": 512
     },
     "test":
     {
