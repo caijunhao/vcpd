@@ -48,11 +48,18 @@ class CPNDataset(Dataset):
 
     def sample_pts(self, sample):
         num_pts = sample['ids_cp1'].shape[0]
-        ids = np.arange(num_pts)
         if num_pts >= self.num_sample:
-            ids = np.random.choice(ids, self.num_sample, replace=False)
+            num_pos = np.sum(sample['label'])
+            num_neg = num_pts - num_pos
+            half1 = self.num_sample // 2
+            half2 = self.num_sample - half1
+            pos_ids, neg_ids = np.arange(num_pos), np.arange(num_pos, num_pts)
+            pos_ids = pos_ids if num_pos <= half1 else np.random.choice(pos_ids, half1, replace=False)
+            neg_ids = neg_ids if num_neg <= half2 else np.random.choice(neg_ids, half2, replace=False)
+            ids = np.concatenate([pos_ids, neg_ids], axis=0)
             sample['mask'] = np.ones(self.num_sample).reshape(-1, 1)  # N' * 1
         else:
+            ids = np.arange(num_pts)
             complementary = np.random.choice(ids, self.num_sample-num_pts, replace=True)
             ids = np.concatenate([ids, complementary], axis=0)
             sample['mask'] = np.concatenate([np.ones(num_pts),

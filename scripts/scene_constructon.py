@@ -251,6 +251,7 @@ def main(args):
         print('elapse time on scene rendering: {}s'.format(e - b))
         # tsdf generation
         sdf_path = os.path.join(args.output, '{:06d}'.format(i))
+        discard = False
         if args.sdf:
             for ri, di, pi, ii, idx in zip(rgb_list, depth_list, pose_list, intr_list, range(len(intr_list))):
                 os.makedirs(sdf_path) if not os.path.exists(sdf_path) else None
@@ -272,9 +273,8 @@ def main(args):
                     print('num_cp: {} | num_ncp: {}'.format(num_cp, num_ncp))
                     if num_cp < 10 or num_ncp < 10:
                         print('# of valid points are less than given threshold, discard current scene')
-                        tsdf.reset()
-                        tsdf2.reset()
-                        continue
+                        discard = True
+                        break
                     else:
                         if cfg['sdf']['gaussian_blur']:
                             sdf_vol = tsdf.gaussian_blur(tsdf.post_processed_volume)
@@ -298,6 +298,8 @@ def main(args):
         tsdf.write_mesh(os.path.join(sdf_path, '{:06d}_mesh.ply'.format(i)), *tsdf.compute_mesh(step_size=3))
         tsdf.reset()
         tsdf2.reset()
+        if discard:
+            continue
         i += 1
 
 
