@@ -17,10 +17,50 @@ import json
 import time
 import os
 
-np.random.seed(777)
+np.random.seed(7)
 torch.set_default_dtype(torch.float32)
 tf32 = torch.float32
 nf32 = np.float32
+
+
+def check_valid_pts(pts, bounds):
+    """
+    check if the given points are inside the boundaries or not.
+    :param pts: an Nx3-d numpy array representing the 3-d points.
+    :param bounds: a 2x3-d numpy array representing the boundaries of the volume.
+    :return: an N-d numpy array representing if the points are inside the given boundaries or not.
+    """
+    flag_x = np.logical_and(pts[:, 0] >= bounds[0, 0], pts[:, 0] <= bounds[1, 0])
+    flag_y = np.logical_and(pts[:, 1] >= bounds[0, 1], pts[:, 1] <= bounds[1, 1])
+    flag_z = np.logical_and(pts[:, 2] >= bounds[0, 2], pts[:, 2] <= bounds[1, 2])
+    flag = flag_x * flag_y * flag_z
+    return flag
+
+
+def get_neg_from_pos(cp1, cp2):
+    dtype = cp1.dtype
+    num_cp = cp1.shape[0]
+    if num_cp <= 1:
+        return np.zeros((0, 3), dtype=dtype), np.zeros((0, 3), dtype=dtype)
+    y = cp1 - cp2
+    norm_y = np.linalg.norm(y, axis=1)
+    # y = y / norm_y
+    ids = np.arange(num_cp)
+    np.random.shuffle(ids)
+    ncp1 = cp1
+    ncp2 = cp2[ids]
+    ny = ncp1 - ncp2
+    norm_ny = np.linalg.norm(ny, axis=1)
+    # ny = ny / norm_ny
+    norm = norm_y * norm_ny
+    norm_flag = norm > 0
+    cos_wo_norm = np.sum(y * ny, axis=1)  # cos_w_norm = np.sum((y / norm) * (ny / norm_ny), axis=1)
+    # random samples whose angles between the random and original grasp direction are larger than
+    # 17 degree will be considered as valid negative samples.
+    cos_flag = np.cos(np.deg2rad(17)) * norm > cos_wo_norm
+    flag = norm_flag * cos_flag
+    ncp1, ncp2 = ncp1[flag], ncp2[flag]
+    return ncp1, ncp2
 
 
 def main(args):
@@ -54,8 +94,8 @@ def main(args):
                         cfg['sdf']['x_max'], cfg['sdf']['y_max'], cfg['sdf']['z_max']], dtype=nf32).reshape(2, 3)
     resolution = cfg['sdf']['resolution']
     tsdf = SDF(vol_bnd, resolution, rgb=False, device=device)
+    tsdf2 = SDF(vol_bnd, resolution, rgb=False, device=device)
     vol_bnd = tsdf.vol_bnd
-    # tsdf = TSDF(vol_bnd, resolution)
     i = 0
     while i < cfg['scene']['trial']:
         info_dict = dict()
@@ -146,6 +186,10 @@ def main(args):
             contacts2 = intersects[candidate_flag]
             contact_pts1.append(contacts1)
             contact_pts2.append(contacts2)
+            # generate negative contact point pairs from positive ones
+            neg_contacts1, neg_contacts2 = get_neg_from_pos(contacts1, contacts2)
+            neg_pts1.append(neg_contacts1)
+            neg_pts2.append(neg_contacts2)
             # retrieve negative contact points
             neg_flag = np.sum(info_dict[o.obj_name]['collisions'], axis=1) == cfg['num_angle']
             neg_intersects0 = info_dict[o.obj_name]['intersects'][neg_flag]
@@ -168,14 +212,8 @@ def main(args):
         contact_pts2 = np.concatenate(contact_pts2, axis=0).astype(np.float32)
         flag = check_valid_pts(contact_pts1, vol_bnd) * check_valid_pts(contact_pts2, vol_bnd)
         contact_pts1, contact_pts2 = contact_pts1[flag], contact_pts2[flag]
-        contact_ids = np.arange(contact_pts1.shape[0])
-        np.random.shuffle(contact_ids)  # randomly permute the order of right contact points to create neg samples
-        neg1_pts1 = contact_pts1.copy()
-        neg1_pts2 = contact_pts2.copy()[contact_ids]
-        neg2_pts1 = np.concatenate(neg_pts1, axis=0).astype(np.float32)
-        neg2_pts2 = np.concatenate(neg_pts2, axis=0).astype(np.float32)
-        neg_pts1 = np.concatenate([neg1_pts1, neg2_pts1], axis=0)
-        neg_pts2 = np.concatenate([neg1_pts2, neg2_pts2], axis=0)
+        neg_pts1 = np.concatenate(neg_pts1, axis=0).astype(np.float32)
+        neg_pts2 = np.concatenate(neg_pts2, axis=0).astype(np.float32)
         flag = check_valid_pts(neg_pts1, vol_bnd) * check_valid_pts(neg_pts2, vol_bnd)
         neg_pts1, neg_pts2 = neg_pts1[flag], neg_pts2[flag]
         pg.set_pose([-2, -2, -2], [0, 0, 0, 1])
@@ -213,59 +251,53 @@ def main(args):
         print('elapse time on scene rendering: {}s'.format(e - b))
         # tsdf generation
         sdf_path = os.path.join(args.output, '{:06d}'.format(i))
-        sdf_vols = list()
-        num_cp = num_ncp = 0
-        val_pts1, val_pts2, val_n_pts1, val_n_pts2 = None, None, None, None
         if args.sdf:
             for ri, di, pi, ii, idx in zip(rgb_list, depth_list, pose_list, intr_list, range(len(intr_list))):
                 os.makedirs(sdf_path) if not os.path.exists(sdf_path) else None
-                ri = ri[..., 0:3].astype(np.float32)
-                di = cam.add_noise(di).astype(np.float32)
-                pi, ii = pi.astype(np.float32), ii.astype(np.float32)
-                tsdf.integrate(di, ii, pi, rgb=ri)
+                ri, ndi = ri[..., 0:3], cam.add_noise(di)
+                tsdf.integrate(ndi, ii, pi, rgb=ri)
+                tsdf2.integrate(di, ii, pi, rgb=ri)
                 if idx in cfg['sdf']['save_volume']:
-                    sdf_cp1, sdf_cp2 = tsdf.extract_sdf(contact_pts1), tsdf.extract_sdf(contact_pts2)
+                    sdf_cp1 = tsdf2.extract_sdf(contact_pts1, gaussian_blur=False).cpu().numpy()
+                    sdf_cp2 = tsdf2.extract_sdf(contact_pts2, gaussian_blur=False).cpu().numpy()
                     th = 0.2
                     sdf_cp_flag = np.logical_and(np.abs(sdf_cp1) <= th, np.abs(sdf_cp2) <= th)
                     val_pts1, val_pts2 = contact_pts1[sdf_cp_flag], contact_pts2[sdf_cp_flag]
-                    sdf_ncp1, sdf_ncp2 = tsdf.extract_sdf(neg_pts1), tsdf.extract_sdf(neg_pts2)
+                    sdf_ncp1 = tsdf2.extract_sdf(neg_pts1, gaussian_blur=False).cpu().numpy()
+                    sdf_ncp2 = tsdf2.extract_sdf(neg_pts2, gaussian_blur=False).cpu().numpy()
                     sdf_ncp_flag = np.logical_and(np.abs(sdf_ncp1) <= th, np.abs(sdf_ncp2) <= th)
                     val_n_pts1, val_n_pts2 = neg_pts1[sdf_ncp_flag], neg_pts2[sdf_ncp_flag]
                     num_cp = val_pts1.shape[0]
                     num_ncp = val_n_pts1.shape[0]
-                    selected_ids = np.random.choice(np.arange(num_ncp), num_cp, replace=num_ncp < num_cp)
-                    print('num_cp: {} | num_ncp: {}'.format(num_cp, min(num_cp, num_ncp)))
-                    val_n_pts1, val_n_pts2 = val_n_pts1[selected_ids], val_n_pts2[selected_ids]
-                    if cfg['sdf']['gaussian_blur']:
-                        sdf_vol = tsdf.gaussian_blur(tsdf.post_processed_volume)
+                    print('num_cp: {} | num_ncp: {}'.format(num_cp, num_ncp))
+                    if num_cp < 10 or num_ncp < 10:
+                        print('# of valid points are less than given threshold, discard current scene')
+                        tsdf.reset()
+                        tsdf2.reset()
+                        continue
                     else:
-                        sdf_vol = tsdf.post_processed_volume
-                    sdf_vol_cpu = sdf_vol.cpu().numpy()
-                    sdf_vols.append(sdf_vol_cpu)
+                        if cfg['sdf']['gaussian_blur']:
+                            sdf_vol = tsdf.gaussian_blur(tsdf.post_processed_volume)
+                        else:
+                            sdf_vol = tsdf.post_processed_volume
+                        sdf_vol_cpu = sdf_vol.cpu().numpy()
+                        np.save(os.path.join(sdf_path, '{:04d}_pos_contact1.npy'.format(idx)),
+                                tsdf.get_ids(val_pts1).cpu().numpy())
+                        np.save(os.path.join(sdf_path, '{:04d}_pos_contact2.npy'.format(idx)),
+                                tsdf.get_ids(val_pts2).cpu().numpy())
+                        np.save(os.path.join(sdf_path, '{:04d}_neg_contact1.npy'.format(idx)),
+                                tsdf.get_ids(val_n_pts1).cpu().numpy())
+                        np.save(os.path.join(sdf_path, '{:04d}_neg_contact2.npy'.format(idx)),
+                                tsdf.get_ids(val_n_pts2).cpu().numpy())
+                        np.save(os.path.join(sdf_path, '{:04d}_sdf_volume.npy'.format(idx)),
+                                sdf_vol_cpu)
         p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
         [p.removeBody(o.obj_id) for o in dynamic_list]
         [p.removeBody(o.obj_id) for o in static_list]
         p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
-        if num_cp == 0 or num_ncp == 0:
-            print('no valid point was found, discard current scene')
-            shutil.rmtree(sdf_path)
-            tsdf.reset()
-            continue
-        else:
-            for k in range(len(sdf_vols)):
-                np.save(os.path.join(sdf_path, '{:04d}_pos_contact1.npy'.format(cfg['sdf']['save_volume'][k])),
-                        tsdf.get_ids(val_pts1).cpu().numpy())
-                np.save(os.path.join(sdf_path, '{:04d}_pos_contact2.npy'.format(cfg['sdf']['save_volume'][k])),
-                        tsdf.get_ids(val_pts2).cpu().numpy())
-                np.save(os.path.join(sdf_path, '{:04d}_neg_contact1.npy'.format(cfg['sdf']['save_volume'][k])),
-                        tsdf.get_ids(val_n_pts1).cpu().numpy())
-                np.save(os.path.join(sdf_path, '{:04d}_neg_contact2.npy'.format(cfg['sdf']['save_volume'][k])),
-                        tsdf.get_ids(val_n_pts2).cpu().numpy())
-                np.save(os.path.join(sdf_path, '{:04d}_sdf_volume.npy'.format(cfg['sdf']['save_volume'][k])),
-                        sdf_vols[k])
-            tsdf.write_mesh(os.path.join(sdf_path, '{:06d}_mesh.ply'.format(i)),
-                            *tsdf.compute_mesh(step_size=3))
-            tsdf.reset()
+        tsdf.write_mesh(os.path.join(sdf_path, '{:06d}_mesh.ply'.format(i)), *tsdf.compute_mesh(step_size=3))
+        tsdf.reset()
+        tsdf2.reset()
         i += 1
 
 
