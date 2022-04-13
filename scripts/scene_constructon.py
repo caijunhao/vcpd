@@ -291,8 +291,12 @@ def main(args):
                                 tsdf.get_ids(val_n_pts2).cpu().numpy())
                         np.save(os.path.join(sdf_path, '{:04d}_sdf_volume.npy'.format(idx)),
                                 sdf_vol_cpu)
-        scene_info = [(o.obj_name, o.get_pose()) for o in static_list]
-        np.save(os.path.join(sdf_path, '{:06d}_scene_info.npy'.format(i)), scene_info)
+        obj_info = [(o.obj_name, o.get_pose()) for o in static_list]
+        np.save(os.path.join(sdf_path, '{:06d}_obj_info.npy'.format(i)), obj_info)
+        sdf_info = {'voxel_length': tsdf.res,
+                    'origin': vol_bnd[0].tolist()}
+        with open(os.path.join(sdf_path, '{:06d}_sdf_info.json'.format(i)), 'w') as fo:
+            json.dump(sdf_info, fo, indent=4)
         p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
         [p.removeBody(o.obj_id) for o in dynamic_list]
         [p.removeBody(o.obj_id) for o in static_list]
