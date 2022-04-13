@@ -17,7 +17,7 @@ import json
 import time
 import os
 
-np.random.seed(7)
+# np.random.seed(7)
 torch.set_default_dtype(torch.float32)
 tf32 = torch.float32
 nf32 = np.float32
@@ -292,7 +292,7 @@ def main(args):
                         np.save(os.path.join(sdf_path, '{:04d}_sdf_volume.npy'.format(idx)),
                                 sdf_vol_cpu)
         obj_info = [(o.obj_name, o.get_pose()) for o in static_list]
-        np.save(os.path.join(sdf_path, '{:06d}_obj_info.npy'.format(i)), obj_info)
+        np.save(os.path.join(sdf_path, '{:06d}_obj_info.npy'.format(i)), np.asanyarray(obj_info, dtype=object))
         sdf_info = {'voxel_length': tsdf.res,
                     'origin': vol_bnd[0].tolist()}
         with open(os.path.join(sdf_path, '{:06d}_sdf_info.json'.format(i)), 'w') as fo:
