@@ -291,11 +291,16 @@ def main(args):
                                 tsdf.get_ids(val_n_pts2).cpu().numpy())
                         np.save(os.path.join(sdf_path, '{:04d}_sdf_volume.npy'.format(idx)),
                                 sdf_vol_cpu)
+        scene_info = [(o.obj_name, o.get_pose()) for o in static_list]
+        np.save(os.path.join(sdf_path, '{:06d}_scene_info.npy'.format(i)), scene_info)
         p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
         [p.removeBody(o.obj_id) for o in dynamic_list]
         [p.removeBody(o.obj_id) for o in static_list]
         p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
-        tsdf.write_mesh(os.path.join(sdf_path, '{:06d}_mesh.ply'.format(i)), *tsdf.compute_mesh(step_size=3))
+        v, f, n, c = tsdf.compute_mesh(step_size=3)
+        m = trimesh.Trimesh(vertices=v, faces=f, vertex_normals=n, vertex_colors=c)
+        m.export(os.path.join(sdf_path, '{:06d}_mesh.obj'.format(i)))
+        # tsdf.write_mesh(os.path.join(sdf_path, '{:06d}_mesh.ply'.format(i)), v, f, n, c)
         tsdf.reset()
         tsdf2.reset()
         if discard:
