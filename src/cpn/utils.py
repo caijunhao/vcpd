@@ -84,13 +84,13 @@ def select_gripper_pose(tsdf, pg, score, cp1, cp2, gripper_depth,
     :param max_width:
     :param th_s:
     :param th_c:
-    :return: the 7-DoF gripper pose with the highest grasp quality and free collision.
+    :return: 4 torch tensor representing sets of gripper position, rotations, and contact points
     """
     dtype = score.dtype
     dev = score.device
     score = torch.sigmoid(score)
     score, rank = torch.sort(score, descending=True)
-    th_s = score[0] * th_s  # select top 3% contact points as candidates
+    th_s = score[0] * th_s  # select top 0.1% contact points as candidates
     rank = rank[score >= th_s]
     num_cp = rank.shape[0]
     cp1, cp2 = cp1[rank], cp2[rank]
@@ -127,56 +127,75 @@ def select_gripper_pose(tsdf, pg, score, cp1, cp2, gripper_depth,
     vs[..., n_h:n_h+n_l, :] = vs[..., n_h:n_h+n_l, :] - offset * ys  # left finger vertices
     vs[..., n_h+n_l:n_h+n_l+n_r, :] = vs[..., n_h+n_l:n_h+n_l+n_r, :] + offset * ys  # right finger vertices
     sdv = tsdf.extract_sdf(vs.reshape(-1, 3), gaussian_blur=True).reshape(num_cp, num_angle, num_v)
-    num_free = torch.sum(sdv > 0, dim=-1)  # num_cp * num_angle
-    flag_s = num_free > torch.max(num_free) * th_c
-    rots = rots[flag_s]
-    gripper_pos = gripper_pos[flag_s]
-    width = torch.cat([width] * num_angle, dim=1)[flag_s]
-    num_free = num_free[flag_s]
-    score_n = -rots[:, 2, 2] + num_free / num_v * 20
-    _, ids = torch.sort(score_n, descending=True)
-    # ids = ids[torch.randperm(ids.shape[0])]
-    rots = rots[ids]
-    gripper_pos = gripper_pos[ids].squeeze(dim=1)
-    width = width[ids]
-    # recompute the contact points
-    distance = torch.cat([distance] * num_angle, dim=1)[flag_s]
-    distance = distance[ids]
-    pos = torch.stack([pos] * num_angle, dim=1)[flag_s]
-    pos = pos[ids]
+    num_free = torch.sum(sdv > 0.2, dim=-1)  # num_cp * num_angle
+    flag_c = num_free > torch.max(num_free) * th_c
+    rots = rots[flag_c]
+    gripper_pos = gripper_pos[flag_c]
+    width = torch.cat([width] * num_angle, dim=1)[flag_c]
+    distance = torch.cat([distance] * num_angle, dim=1)[flag_c]
+    pos = torch.stack([pos] * num_angle, dim=1)[flag_c]
+    num_free = num_free[flag_c]
+    col_score = num_free / num_v
+    # resort the contact points
+    # _, ids = torch.sort(score_n, descending=True)
+    # rots = rots[ids]
+    # gripper_pos = gripper_pos[ids]
+    # width = width[ids]
+    # distance = distance[ids]
+    # pos = pos[ids]
     grasp_directions = rots[..., 1]
     cp1 = (pos + grasp_directions * distance.reshape(-1, 1) / 2)
     cp2 = (pos - grasp_directions * distance.reshape(-1, 1) / 2)
-    # debug: sample contact points and visualize
-    # ids = torch.randperm(cp1.shape[0])[0:min(50, cp1.shape[0])]
-    # selected_cp1, selected_cp2 = cp1[ids].cpu().numpy(), cp2[ids].cpu().numpy()
-    # import pybullet as p
-    # radius = 0.003
-    # p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
-    # cp1s = [p.createMultiBody(0,
-    #                           p.createCollisionShape(p.GEOM_SPHERE, radius),
-    #                           p.createVisualShape(p.GEOM_SPHERE, radius, rgbaColor=[1, 0, 0, 1]),
-    #                           basePosition=cp) for cp in selected_cp1]
-    # p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
-    # p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
-    # cp2s = [p.createMultiBody(0,
-    #                           p.createCollisionShape(p.GEOM_SPHERE, radius),
-    #                           p.createVisualShape(p.GEOM_SPHERE, radius, rgbaColor=[0, 1, 0, 1]),
-    #                           basePosition=cp) for cp in selected_cp2]
-    # p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
-    # p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
-    # lines = [p.addUserDebugLine(selected_cp1[pid], selected_cp2[pid],
-    #                             lineColorRGB=np.random.uniform(size=3),
-    #                             lineWidth=0.1) for pid in range(selected_cp2.shape[0])]
-    # p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
-    # p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
-    # [p.removeBody(cp) for cp in cp1s]
-    # [p.removeBody(cp) for cp in cp2s]
-    # [p.removeUserDebugItem(line) for line in lines]
-    # p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
-    # del p
-    # /debug
-    return gripper_pos[0].cpu().numpy(), rots[0].cpu().numpy(), width[0].cpu().numpy(), cp1[0].cpu().numpy(), cp2[0].cpu().numpy()
+    return gripper_pos, rots, width, cp1, cp2
+
+
+def clustering(gripper_pos, rots, width, cp1, cp2, th_d=0.02, th_a=-0.707):
+    num_cp = cp1.shape[0]
+    dtype = cp1.dtype
+    dev = cp1.device
+    # if # of cp pairs are less than or equal to 7, then randomly select one and return
+    if num_cp <= 7:
+        idx = torch.randint(0, num_cp, size=(1,), device=dev)
+        return gripper_pos[idx].cpu().numpy(), rots[idx].cpu().numpy(), width[idx].cpu().numpy(), cp1[idx].cpu().numpy(), cp2[idx].cpu().numpy()
+    grasp_center = (cp1 + cp2) / 2
+    init_num_cls = 7
+    cls_flag = torch.zeros(num_cp, dtype=bool, device=dev)
+    # randomly sample a center as initial cluster
+    init_idx = torch.randint(0, num_cp, size=(1,), device=dev)
+    cls_flag[init_idx] = True
+    ids = torch.arange(num_cp, device=dev)
+    for _ in range(init_num_cls):
+        curr_cls = grasp_center[cls_flag].reshape(1, 3) if torch.sum(cls_flag) == 1 else grasp_center[cls_flag]
+        dist = torch.linalg.norm(curr_cls.reshape(-1, 1, 3) - grasp_center.reshape(1, -1, 3), dim=-1)
+        # farthest center selection
+        cls_flag[torch.argmax(torch.sum(dist, dim=0))] = True
+    assigned_flag = cls_flag.detach().clone()
+    while torch.sum(assigned_flag) < num_cp:
+        curr_cls = grasp_center[cls_flag]  # num_cls * 3
+        dist = torch.linalg.norm(curr_cls.reshape(-1, 1, 3)-grasp_center.reshape(1, -1, 3), dim=-1)  # num_cls * num_cp
+        min_dist, min_ids = torch.min(dist, dim=0)
+        assigned_flag = min_dist <= th_d
+        unassigned_ids = ids[torch.logical_not(assigned_flag)]
+        if unassigned_ids.shape[0] != 0:
+            cls_flag[unassigned_ids[0]] = True
+            # cls_flag[unassigned_ids[torch.randperm(unassigned_ids.shape[0], device=dev)[0]]] = True
+    num_cls = torch.sum(cls_flag)
+    num_max = 0
+    flag = None
+    for i in range(num_cls):
+        curr_flag = min_ids == i  # current cluster flag
+        curr_num_center = torch.sum(curr_flag)
+        if curr_num_center > num_max:
+            num_max = curr_num_center
+            flag = curr_flag
+    curr_centers = grasp_center[flag]
+    cls_center = torch.mean(curr_centers, dim=0)
+    dist = torch.linalg.norm(curr_centers - cls_center.view(1, 3), dim=1)
+    ids = torch.argsort(dist)
+    gripper_pos, rots, width, cp1, cp2 = gripper_pos[flag][ids], rots[flag][ids], width[flag][ids], cp1[flag][ids], cp2[flag][ids]
+    flag_z = rots[:, -1, -1] < th_a
+    gripper_pos, rots, width, cp1, cp2 = gripper_pos[flag_z][0], rots[flag_z][0], width[flag_z][0], cp1[flag_z][0], cp2[flag_z][0]
+    return gripper_pos.cpu().numpy(), rots.cpu().numpy(), width.cpu().numpy(), cp1.cpu().numpy(), cp2.cpu().numpy()
 
 
 def basic_rots(angles, axis):

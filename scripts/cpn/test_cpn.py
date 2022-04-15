@@ -1,6 +1,6 @@
 from scipy.spatial.transform.rotation import Rotation
 from cpn.model import CPN
-from cpn.utils import sample_contact_points, select_gripper_pose
+from cpn.utils import sample_contact_points, select_gripper_pose, clustering
 from sim.camera import Camera
 from sim.objects import RigidObject, PandaGripper
 from sim.tray import Tray
@@ -17,8 +17,8 @@ import os
 
 
 def main(args):
-    torch.manual_seed(args.seed)
-    np.random.seed(args.seed)
+    # torch.manual_seed(args.seed)
+    # np.random.seed(args.seed)
     os.environ['CUDA_VISIBLE_DEVICES'] = args.cuda_device
     with open(args.config, 'r') as config_file:
         cfg = json.load(config_file)
@@ -134,8 +134,13 @@ def main(args):
         sample['ids_cp1'] = ids_cp1.permute((1, 0)).unsqueeze(dim=0).unsqueeze(dim=-1)
         sample['ids_cp2'] = ids_cp2.permute((1, 0)).unsqueeze(dim=0).unsqueeze(dim=-1)
         out = torch.squeeze(cpn.forward(sample))
-        pos, rot, width, cp1, cp2 = select_gripper_pose(tsdf, pg.vertex_sets, out, cp1, cp2, cfg['gripper']['depth'])
-        end_point_pos = pos + rot[:, 2] * cfg['gripper']['depth']
+        gripper_pos, rot, width, cp1, cp2 = select_gripper_pose(tsdf, pg.vertex_sets,
+                                                                out, cp1, cp2, cfg['gripper']['depth'])
+        # debug: uncomment for visualization
+        # visualize_contacts(cp1.cpu().numpy(), cp2.cpu().numpy(), num_vis=777)
+        # /debug
+        gripper_pos, rot, width, cp1, cp2 = clustering(gripper_pos, rot, width, cp1, cp2)
+        end_point_pos = gripper_pos + rot[:, 2] * cfg['gripper']['depth']
         closest_obj = get_closest_obj(end_point_pos, static_list)
         contact1, normal1, contact2, normal2 = get_contact_points(cp1, cp2, closest_obj)
         if contact1 is not None:
@@ -144,18 +149,13 @@ def main(args):
             curr_anti_score = np.abs(grasp_direction @ normal1) * np.abs(grasp_direction @ normal2)
         else:
             curr_anti_score = 0
-        # uncomment for visualization
         quat = Rotation.from_matrix(rot).as_quat()
-        pg.set_pose(pos, quat)
+        pg.set_pose(gripper_pos, quat)
         pg.set_gripper_width(width)
-        # l0 = p.addUserDebugLine(contact1, contact2)
-        # s1 = add_sphere(contact1)
-        # l1 = p.addUserDebugLine(contact1 - 0.01 * normal1, contact1 + 0.01 * normal1)
-        # s2 = add_sphere(contact2)
-        # l2 = p.addUserDebugLine(contact2 - 0.01 * normal2, contact2 + 0.01 * normal2)
-        # p.removeBody(s1), p.removeBody(s2)
-        # p.removeUserDebugItem(l0), p.removeUserDebugItem(l1), p.removeUserDebugItem(l2)
-        # closest_obj.change_color()
+        # debug: uncomment for visualization
+        # visualize_contact(contact1, normal1, contact2, normal2)
+        closest_obj.change_color()
+        # /debug
         # tsdf.write_mesh('out.ply', *tsdf.compute_mesh(step_size=1))
         print('current antipodal score: {:04f} given {} view(s)'.format(curr_anti_score, len(intr_list)))
         col = pg.is_collided(tray.get_tray_ids())

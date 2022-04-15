@@ -143,3 +143,50 @@ def get_contact_points_from_center(grasp_center, grasp_direction, obj):
         print('Warning! The retrieved contact points do not belong to the target object.')
     return contact1, normal1, contact2, normal2
 
+
+def visualize_contacts(cp1, cp2, num_vis=50):
+    """
+    visualize contact points in pybullet.
+    :param cp1: A Nx3-d numpy array representing one side of contact points
+    :param cp2: A Nx3-d numpy array representing another side of contact points
+    :param num_vis: the number of contact pairs that visualize in the pybullet.
+    :return: None
+    """
+    assert isinstance(cp1, np.ndarray)
+    ids = np.random.choice(np.arange(cp1.shape[0]), min(num_vis, cp1.shape[0]))
+    selected_cp1, selected_cp2 = cp1[ids], cp2[ids]
+    radius = 0.003
+    p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
+    cp1s = [p.createMultiBody(0,
+                              p.createCollisionShape(p.GEOM_SPHERE, radius),
+                              p.createVisualShape(p.GEOM_SPHERE, radius, rgbaColor=[1, 0, 0, 1]),
+                              basePosition=cp) for cp in selected_cp1]
+    p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
+    p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
+    cp2s = [p.createMultiBody(0,
+                              p.createCollisionShape(p.GEOM_SPHERE, radius),
+                              p.createVisualShape(p.GEOM_SPHERE, radius, rgbaColor=[0, 1, 0, 1]),
+                              basePosition=cp) for cp in selected_cp2]
+    p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
+    p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
+    lines = [p.addUserDebugLine(selected_cp1[pid], selected_cp2[pid],
+                                lineColorRGB=np.random.uniform(size=3),
+                                lineWidth=0.1) for pid in range(selected_cp2.shape[0])]
+    p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
+    input('press Enter to remove contact points')
+    p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
+    [p.removeBody(cp) for cp in cp1s]
+    [p.removeBody(cp) for cp in cp2s]
+    [p.removeUserDebugItem(line) for line in lines]
+    p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
+
+
+def visualize_contact(cp1, n1, cp2, n2):
+    l0 = p.addUserDebugLine(cp1, cp2)
+    s1 = add_sphere(cp1)
+    l1 = p.addUserDebugLine(cp1 - 0.01 * n1, cp1 + 0.01 * n1)
+    s2 = add_sphere(cp2)
+    l2 = p.addUserDebugLine(cp2 - 0.01 * n2, cp2 + 0.01 * n2)
+    input('press Enter to remove the contact')
+    p.removeBody(s1), p.removeBody(s2)
+    p.removeUserDebugItem(l0), p.removeUserDebugItem(l1), p.removeUserDebugItem(l2)
