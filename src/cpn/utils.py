@@ -155,13 +155,15 @@ def clustering(gripper_pos, rots, width, cp1, cp2, th_d=0.02, th_a=-0.707):
     dev = cp1.device
     # if # of cp pairs are less than or equal to 7, then randomly select one and return
     if num_cp <= 7:
-        idx = torch.randint(0, num_cp, size=(1,), device=dev)
+        ids = torch.argsort(rots[:, -1, -1])
+        idx = ids[0]
+        # idx = torch.randint(0, num_cp, size=(1,), device=dev)[0]
         return gripper_pos[idx].cpu().numpy(), rots[idx].cpu().numpy(), width[idx].cpu().numpy(), cp1[idx].cpu().numpy(), cp2[idx].cpu().numpy()
     grasp_center = (cp1 + cp2) / 2
     init_num_cls = 7
     cls_flag = torch.zeros(num_cp, dtype=bool, device=dev)
     # randomly sample a center as initial cluster
-    init_idx = torch.randint(0, num_cp, size=(1,), device=dev)
+    init_idx = torch.randint(0, num_cp, size=(1,), device=dev)[0]
     cls_flag[init_idx] = True
     ids = torch.arange(num_cp, device=dev)
     for _ in range(init_num_cls):
@@ -193,7 +195,7 @@ def clustering(gripper_pos, rots, width, cp1, cp2, th_d=0.02, th_a=-0.707):
     dist = torch.linalg.norm(curr_centers - cls_center.view(1, 3), dim=1)
     ids = torch.argsort(dist)
     gripper_pos, rots, width, cp1, cp2 = gripper_pos[flag][ids], rots[flag][ids], width[flag][ids], cp1[flag][ids], cp2[flag][ids]
-    flag_z = rots[:, -1, -1] < th_a
+    flag_z = rots[:, -1, -1] <= torch.max(torch.min(rots[:, -1, -1]), torch.tensor(th_a, dtype=dtype, device=dev))
     gripper_pos, rots, width, cp1, cp2 = gripper_pos[flag_z][0], rots[flag_z][0], width[flag_z][0], cp1[flag_z][0], cp2[flag_z][0]
     return gripper_pos.cpu().numpy(), rots.cpu().numpy(), width.cpu().numpy(), cp1.cpu().numpy(), cp2.cpu().numpy()
 

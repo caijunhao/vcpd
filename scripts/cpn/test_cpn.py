@@ -17,8 +17,8 @@ import os
 
 
 def main(args):
-    # torch.manual_seed(args.seed)
-    # np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
     os.environ['CUDA_VISIBLE_DEVICES'] = args.cuda_device
     with open(args.config, 'r') as config_file:
         cfg = json.load(config_file)
@@ -154,7 +154,7 @@ def main(args):
         pg.set_gripper_width(width)
         # debug: uncomment for visualization
         # visualize_contact(contact1, normal1, contact2, normal2)
-        closest_obj.change_color()
+        # closest_obj.change_color()
         # /debug
         # tsdf.write_mesh('out.ply', *tsdf.compute_mesh(step_size=1))
         print('current antipodal score: {:04f} given {} view(s)'.format(curr_anti_score, len(intr_list)))
@@ -193,7 +193,7 @@ if __name__ == '__main__':
                         help='the number of test trials.')
     parser.add_argument('--gui',
                         type=int,
-                        default=1,
+                        default=0,
                         help='choose 0 for DIRECT mode and 1 (or others) for GUI mode.')
     parser.add_argument('--cuda_device',
                         default='0',
