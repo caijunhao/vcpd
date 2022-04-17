@@ -159,8 +159,10 @@ def main(args):
         b = time.time()
         for o in static_list:
             pose = o.transform
-            # col_flag = np.logical_not(info_dict[o.obj_name]['collisions'])
-            col_flag = np.logical_not(info_dict[o.obj_name]['collision_refine'])
+            if 'collision_refine' in info_dict[o.obj_name]:
+                col_flag = np.logical_not(info_dict[o.obj_name]['collisions'])
+            else:
+                col_flag = np.logical_not(info_dict[o.obj_name]['collision_refine'])
             candidate_flag = np.logical_not(col_flag[col_flag])
             bases0 = np.expand_dims(Rotation.from_quat(info_dict[o.obj_name]['quaternions']).as_matrix(), axis=1)  # n*1*3*3
             rots0 = np.matmul(bases0, basic_rot_mats)[col_flag]
@@ -193,8 +195,10 @@ def main(args):
             neg_pts1.append(neg_contacts1)
             neg_pts2.append(neg_contacts2)
             # retrieve negative contact points
-            # neg_flag = np.sum(info_dict[o.obj_name]['collisions'], axis=1) == cfg['num_angle']
-            neg_flag = np.sum(info_dict[o.obj_name]['collision_refine'], axis=1) == cfg['num_angle']
+            if 'collision_refine' in info_dict[o.obj_name]:
+                neg_flag = np.sum(info_dict[o.obj_name]['collisions'], axis=1) == cfg['num_angle']
+            else:
+                neg_flag = np.sum(info_dict[o.obj_name]['collision_refine'], axis=1) == cfg['num_angle']
             neg_intersects0 = info_dict[o.obj_name]['intersects'][neg_flag]
             neg_centers0 = info_dict[o.obj_name]['centers'][neg_flag]
             neg_intersects = neg_intersects0 @ pose[0:3, 0:3].T + pose[0:3, 3].reshape(1, 3)
