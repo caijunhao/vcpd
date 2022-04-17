@@ -132,14 +132,14 @@ class PandaGripper(object):
         self.set_pose([0, 0, 0], [0, 0, 0, 1])
         self.set_gripper_width(self._max_width)
 
-    def is_collided(self, exemption, threshold=0.0):
+    def is_collided(self, exemption, threshold=0.0, show_col=False):
         gripper_ids = [self.__getattribute__(com).obj_id for com in self.components]
         for obj_id in range(p.getNumBodies()):
             if obj_id not in gripper_ids and obj_id not in exemption:
                 for gripper_id in gripper_ids:
                     contacts = p.getClosestPoints(gripper_id, obj_id, threshold)
                     if len(contacts) != 0:
-                        p.changeVisualShape(obj_id, -1, rgbaColor=[1, 0, 0, 1])
+                        p.changeVisualShape(obj_id, -1, rgbaColor=[1, 0, 0, 1]) if show_col else None
                         return True
         return False
 
