@@ -17,6 +17,7 @@ def main(args):
     mode = p.GUI if args.gui else p.DIRECT
     physics_id = p.connect(mode)
     p.configureDebugVisualizer(p.COV_ENABLE_GUI, 0)
+    p.resetDebugVisualizerCamera(cameraDistance=0.57, cameraYaw=0, cameraPitch=-70, cameraTargetPosition=[0, 0, 0])
     p.setGravity(0, 0, -9.8)
     with open(args.config, 'r') as config_file:
         cfg = json.load(config_file)
