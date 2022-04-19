@@ -27,6 +27,7 @@ def main(args):
     p.connect(mode)
     p.setGravity(0, 0, -9.8)
     p.configureDebugVisualizer(p.COV_ENABLE_GUI, 0)
+    p.resetDebugVisualizerCamera(cameraDistance=0.57, cameraYaw=0, cameraPitch=-70, cameraTargetPosition=[0, 0, 0])
     p.setAdditionalSearchPath(pybullet_data.getDataPath())
     plane_id = p.loadURDF('plane.urdf')
     # scene initialization
@@ -135,7 +136,8 @@ def main(args):
         sample['ids_cp2'] = ids_cp2.permute((1, 0)).unsqueeze(dim=0).unsqueeze(dim=-1)
         out = torch.squeeze(cpn.forward(sample))
         gripper_pos, rot, width, cp1, cp2 = select_gripper_pose(tsdf, pg.vertex_sets,
-                                                                out, cp1, cp2, cfg['gripper']['depth'])
+                                                                out, cp1, cp2, cfg['gripper']['depth'],
+                                                                check_tray=False)
         # debug: uncomment for visualization
         # visualize_contacts(cp1.cpu().numpy(), cp2.cpu().numpy(), num_vis=777)
         # /debug
@@ -158,7 +160,7 @@ def main(args):
         # /debug
         # tsdf.write_mesh('out.ply', *tsdf.compute_mesh(step_size=1))
         print('current antipodal score: {:04f} given {} view(s)'.format(curr_anti_score, len(intr_list)))
-        col = pg.is_collided(tray.get_tray_ids())
+        col = pg.is_collided(tray.get_tray_ids())  # , show_col=True
         print('is collided: {}'.format(col))
         pg.set_pose([-1, 0, -1], [0, 0, 0, 1])
         avg_anti_score = (curr_anti_score + avg_anti_score * i) / (i + 1)
