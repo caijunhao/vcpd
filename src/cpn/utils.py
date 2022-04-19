@@ -105,8 +105,8 @@ def select_gripper_pose(tsdf, pg, score, cp1, cp2, gripper_depth,
     offset = offset.unsqueeze(-1).unsqueeze(-1)  # num_cp * 1 * 1 * 1
     z = torch.zeros_like(y, dtype=dtype, device=dev)
     z_norm = torch.linalg.norm(y[:, 0:2], dim=1)
-    z[:, 0] = torch.abs(y[:, 1]) / z_norm
-    z[:, 1] = -torch.abs(y[:, 0]) / z_norm
+    z[:, 0] = y[:, 1] / z_norm
+    z[:, 1] = -y[:, 0] / z_norm
     x = torch.cross(y, z)
     x = x / torch.linalg.norm(x, dim=1, keepdim=True)
     # u, _, _ = torch.linalg.svd(y.view(num_cp, 3, 1))  # the shape of u: num_cp * 3 * 3
