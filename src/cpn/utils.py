@@ -71,7 +71,8 @@ def sample_contact_points(tsdf, th_a=30, th_s=0.2, start=0.01, end=0.06, num_ste
 
 def select_gripper_pose(tsdf, pg, score, cp1, cp2, gripper_depth,
                         num_angle=32, max_width=0.08,
-                        th_s=0.997, th_c=0.999):
+                        th_s=0.997, th_c=0.999,
+                        check_tray=True):
     """
     Select collision-free pose according to the quality scores of the contact points.
     :param tsdf: the SDF instance
@@ -84,6 +85,7 @@ def select_gripper_pose(tsdf, pg, score, cp1, cp2, gripper_depth,
     :param max_width:
     :param th_s:
     :param th_c:
+    :param check_tray:
     :return: 4 torch tensor representing sets of gripper position, rotations, and contact points
     """
     dtype = score.dtype
@@ -127,6 +129,11 @@ def select_gripper_pose(tsdf, pg, score, cp1, cp2, gripper_depth,
     vs[..., n_h:n_h+n_l, :] = vs[..., n_h:n_h+n_l, :] - offset * ys  # left finger vertices
     vs[..., n_h+n_l:n_h+n_l+n_r, :] = vs[..., n_h+n_l:n_h+n_l+n_r, :] + offset * ys  # right finger vertices
     sdv = tsdf.extract_sdf(vs.reshape(-1, 3), gaussian_blur=True).reshape(num_cp, num_angle, num_v)
+    if check_tray:
+        vs_ids = tsdf.get_ids(vs.reshape(-1, 3)).reshape(num_cp, num_angle, num_v, 3)
+        oob_flag = torch.logical_or(torch.logical_or(vs_ids[..., 0] < 0, vs_ids[..., 0] >= tsdf.shape[0]),
+                                    torch.logical_or(vs_ids[..., 1] < 0, vs_ids[..., 1] >= tsdf.shape[1]))
+        sdv[oob_flag] = -1
     num_free = torch.sum(sdv > 0.2, dim=-1)  # num_cp * num_angle
     flag_c = num_free > torch.max(num_free) * th_c
     rots = rots[flag_c]

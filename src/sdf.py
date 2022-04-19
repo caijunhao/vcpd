@@ -146,6 +146,10 @@ class SDF(object):
             data = data.clone().to(self.dtype).to(self.dev)
         return data
 
+    @property
+    def shape(self):
+        return self.sdf_vol.shape
+
     @staticmethod
     def cw(distance):
         """
