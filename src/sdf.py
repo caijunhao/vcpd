@@ -59,7 +59,7 @@ class SDF(object):
         Integrate RGB-D frame into SDF volume (naive SDF)
         :param depth: An HxW numpy array representing a depth map
         :param intrinsic: A 3x3 numpy array representing the camera intrinsic matrix
-        :param camera_pose: A 4x4 numpy array representing the transformation from camera to reference frame (world)
+        :param camera_pose: A 4x4 numpy array representing the transformation from reference frame (world) to camera
         :param fd: name of the distance function used for sdf integration.
         :param fw: name of the weighting function used for sdf integration.
         :param rgb: (Optional) An HxWx3 numpy array representing a color image

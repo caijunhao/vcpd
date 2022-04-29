@@ -28,6 +28,7 @@ def main(args):
     p.connect(mode)
     p.setGravity(0, 0, -9.8)
     p.configureDebugVisualizer(p.COV_ENABLE_GUI, 0)
+    p.resetDebugVisualizerCamera(cameraDistance=0.57, cameraYaw=0, cameraPitch=-70, cameraTargetPosition=[0, 0, 0])
     p.setAdditionalSearchPath(pybullet_data.getDataPath())
     plane_id = p.loadURDF('plane.urdf')
     # scene initialization

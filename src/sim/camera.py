@@ -24,7 +24,7 @@ class Camera(object):
         self.view_matrix = p.computeViewMatrix(cameraEyePosition=eye_position,
                                                cameraTargetPosition=target_position,
                                                cameraUpVector=up_vector)
-        # camera to world
+        # from world to camera
         self.pose = self.compute_pose(np.asarray(eye_position),
                                       np.asarray(target_position),
                                       np.asarray(up_vector))

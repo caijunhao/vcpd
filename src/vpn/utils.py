@@ -204,7 +204,7 @@ def rank_and_group_poses(sample, scores, device,
 
 def collision_checking(volume, origin, resolution,
                        pos, normal, rot, gpr_pts,
-                       approaching_dist=0.025, th_col=1, th_sdf=-0.1):
+                       approaching_dist=0.025, th_col=1, th_sdf=0.2):
     """
     Collision checking for all the grasp candidates represented by position, surface normal, and rotation matrix.
     In this function, we project gripper points into the volume by the gripper pose and examine sign of values to 
