@@ -2,7 +2,6 @@ from sim.utils import step_simulation
 from scipy.spatial.transform import Rotation
 import pybullet as p
 import numpy as np
-import pymeshlab as ml
 import os
 
 
@@ -74,11 +73,9 @@ class PandaGripper(object):
     def __init__(self, asset_path):
         self.components = ['hand', 'left_finger', 'right_finger']
         self.vertex_sets = dict()
-        ms = ml.MeshSet()
         for component in self.components:
             vis_path = os.path.join(asset_path, component+'.obj')
             col_path = os.path.join(asset_path, component+'_col.obj')
-            col2_path = os.path.join(asset_path, component+'_col2.obj')
             vis_params = {'shapeType': p.GEOM_MESH, 'fileName': vis_path, 'meshScale': [1] * 3}
             col_params = {'shapeType': p.GEOM_MESH, 'fileName': col_path, 'meshScale': [1] * 3}
             body_params = {'baseMass': 0, 'basePosition': [0, 0, 0], 'baseOrientation': [0, 0, 0, 1]}
@@ -86,8 +83,6 @@ class PandaGripper(object):
                                                     vis_params=vis_params,
                                                     col_params=col_params,
                                                     body_params=body_params))
-            ms.load_new_mesh(col2_path)
-            self.vertex_sets[component] = ms.current_mesh().vertex_matrix()
         self._max_width = 0.08
         self._curr_width = 0.08
 

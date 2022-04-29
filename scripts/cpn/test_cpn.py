@@ -7,6 +7,7 @@ from sim.tray import Tray
 from sim.utils import *
 from sdf import SDF
 import xml.etree.ElementTree as et
+import pymeshlab as ml
 import pybullet as p
 import pybullet_data
 import numpy as np
@@ -37,6 +38,12 @@ def main(args):
     init_tray = Tray(**cfg['tray'])
     cam = Camera(**cfg['camera'])
     pg = PandaGripper('assets')
+    ms = ml.MeshSet()
+    vertex_sets = dict()
+    for component in pg.components:
+        col2_path = os.path.join('assets', component + '_col2.obj')
+        ms.load_new_mesh(col2_path)
+        vertex_sets[component] = ms.current_mesh().vertex_matrix()
     pg.set_pose([-2, -2, -2], [0, 0, 0, 1])
     mesh_list = os.listdir(args.mesh)
     angles = np.arange(cfg['num_angle']) / cfg['num_angle'] * 2 * np.pi
@@ -135,7 +142,7 @@ def main(args):
         sample['ids_cp1'] = ids_cp1.permute((1, 0)).unsqueeze(dim=0).unsqueeze(dim=-1)
         sample['ids_cp2'] = ids_cp2.permute((1, 0)).unsqueeze(dim=0).unsqueeze(dim=-1)
         out = torch.squeeze(cpn.forward(sample))
-        gripper_pos, rot, width, cp1, cp2 = select_gripper_pose(tsdf, pg.vertex_sets,
+        gripper_pos, rot, width, cp1, cp2 = select_gripper_pose(tsdf, vertex_sets,
                                                                 out, cp1, cp2, cfg['gripper']['depth'],
                                                                 check_tray=False)
         # debug: uncomment for visualization
@@ -195,7 +202,7 @@ if __name__ == '__main__':
                         help='the number of test trials.')
     parser.add_argument('--gui',
                         type=int,
-                        default=0,
+                        default=1,
                         help='choose 0 for DIRECT mode and 1 (or others) for GUI mode.')
     parser.add_argument('--cuda_device',
                         default='0',
