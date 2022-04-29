@@ -1,6 +1,10 @@
+from vcpd.srv import RequestVolume, RequestVolumeRequest, RequestVolumeResponse
+from cpn.utils import sample_contact_points, select_gripper_pose, clustering
+from sdf import SDF
 from scipy.spatial.transform.rotation import Rotation
 from sensor_msgs.msg import PointCloud2, PointField
 import numpy as np
+import torch
 import rospy
 
 
@@ -131,3 +135,64 @@ class SDFCommander(object):
         msg.is_dense = False  # int(np.isfinite(xyz).all())
         msg.data = pcl.tostring()
         return msg
+
+
+class CPNCommander(object):
+    def __init__(self, volume_bounds, resolution, model, gripper_points, gripper_depth=0.10327):
+        device = model.device
+        self.cpn = model
+        self.tsdf = SDF(volume_bounds, resolution, device=device)
+        self.volume_bounds = volume_bounds
+        self.resolution = resolution
+        self.device = device
+        self.trigger_flag = False
+        self.gpr_pts = gripper_points  # Nx3-d torch tensor
+        self.gpr_d = gripper_depth  # the approach distance between the end point of the finger and the gripper frame
+
+    def callback_cpn(self, msg):
+        self.trigger_flag = msg.data
+        if self.trigger_flag:
+            rospy.loginfo('activate cpn node')
+        else:
+            rospy.loginfo('pause cpn node')
+
+    def request_a_volume(self, post_processed=True, gaussian_blur=True, service_name='request_volume'):
+        rospy.wait_for_service(service_name)
+        try:
+            handle_receive_sdf_volume = rospy.ServiceProxy(service_name,
+                                                           RequestVolume)
+            req = RequestVolumeRequest()
+            req.post_processed = post_processed
+            req.gaussian_blur = gaussian_blur
+            res = handle_receive_sdf_volume(req)
+            rospy.loginfo('receive a volume message from {}'.format(service_name))
+            return self.volume_msg2numpy(res.v)
+        except rospy.ServiceException as e:
+            print("Service call failed: %s" % e)
+
+    def inference(self):
+        sdf_volume = self.request_a_volume()
+        self.tsdf.sdf_vol = torch.from_numpy(sdf_volume).to(self.device)
+        cp1, cp2 = sample_contact_points(self.tsdf)
+        ids_cp1, ids_cp2 = self.tsdf.get_ids(cp1), self.tsdf.get_ids(cp2)
+        sample = dict()
+        sample['sdf_volume'] = self.tsdf.sdf_vol.unsqueeze(dim=0).unsqueeze(dim=0)
+        sample['ids_cp1'] = ids_cp1.permute((1, 0)).unsqueeze(dim=0).unsqueeze(dim=-1)
+        sample['ids_cp2'] = ids_cp2.permute((1, 0)).unsqueeze(dim=0).unsqueeze(dim=-1)
+        out = torch.squeeze(self.cpn.forward(sample))
+        gripper_pos, rot, width, cp1, cp2 = select_gripper_pose(self.tsdf, self.gpr_pts,
+                                                                out, cp1, cp2, self.gpr_d,
+                                                                check_tray=False)
+        gripper_pos, rot, width, cp1, cp2 = clustering(gripper_pos, rot, width, cp1, cp2)
+        msg = GripperPose()
+        msg.cp1.x, msg.cp1.y, msg.cp1.z = cp1.tolist()
+        msg.cp2.x, msg.cp2.y, msg.cp2.z = cp2.tolist()
+        quat = Rotation.from_matrix(rot).as_quat().tolist()
+        msg.orientation.x, msg.orientation.y, msg.orientation.z, msg.orientation.w = quat
+        msg.width = width
+        return msg
+
+    @staticmethod
+    def volume_msg2numpy(msg):
+        volume = np.array(msg.data).reshape((msg.height, msg.width, msg.depth))
+        return volume.astype(np.float32)
