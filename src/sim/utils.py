@@ -159,13 +159,13 @@ def visualize_contacts(cp1, cp2, num_vis=50):
     p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
     cp1s = [p.createMultiBody(0,
                               p.createCollisionShape(p.GEOM_SPHERE, radius),
-                              p.createVisualShape(p.GEOM_SPHERE, radius, rgbaColor=[1, 0, 0, 1]),
+                              p.createVisualShape(p.GEOM_SPHERE, radius, rgbaColor=[220/255, 20/255, 60/255, 1]),
                               basePosition=cp) for cp in selected_cp1]
     p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
     p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
     cp2s = [p.createMultiBody(0,
                               p.createCollisionShape(p.GEOM_SPHERE, radius),
-                              p.createVisualShape(p.GEOM_SPHERE, radius, rgbaColor=[0, 1, 0, 1]),
+                              p.createVisualShape(p.GEOM_SPHERE, radius, rgbaColor=[60/255, 179/255, 113/255, 1]),
                               basePosition=cp) for cp in selected_cp2]
     p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
     p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
@@ -183,10 +183,10 @@ def visualize_contacts(cp1, cp2, num_vis=50):
 
 def visualize_contact(cp1, n1, cp2, n2):
     l0 = p.addUserDebugLine(cp1, cp2)
-    s1 = add_sphere(cp1)
-    l1 = p.addUserDebugLine(cp1 - 0.01 * n1, cp1 + 0.01 * n1)
-    s2 = add_sphere(cp2)
-    l2 = p.addUserDebugLine(cp2 - 0.01 * n2, cp2 + 0.01 * n2)
+    s1 = add_sphere(cp1, radius=0.004, rgb=[220/255, 20/255, 60/255])
+    l1 = p.addUserDebugLine(cp1 - 0.01 * n1, cp1 + 0.01 * n1, lineColorRGB=[220/255, 20/255, 60/255], lineWidth=0.2)
+    s2 = add_sphere(cp2, radius=0.004, rgb=[60/255, 179/255, 113/255])
+    l2 = p.addUserDebugLine(cp2 - 0.01 * n2, cp2 + 0.01 * n2, lineColorRGB=[60/255, 179/255, 113/255], lineWidth=0.2)
     input('press Enter to remove the contact')
     p.removeBody(s1), p.removeBody(s2)
     p.removeUserDebugItem(l0), p.removeUserDebugItem(l1), p.removeUserDebugItem(l2)

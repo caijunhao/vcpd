@@ -89,21 +89,12 @@ class PandaGripper(object):
     def set_pose(self, position, quaternion):
         for com in self.components:
             self.__getattribute__(com).set_pose(position, quaternion)
+        curr_width = self._curr_width
+        self._curr_width = self._max_width
+        self.set_gripper_width(curr_width)
 
     def get_pose(self):
         return self.__getattribute__(self.components[0]).get_pose()
-
-    def get_vertices(self):
-        width = self._curr_width
-        offset = (self._max_width - width) / 2
-        pos, quat = self.get_pose()
-        rot = Rotation.from_quat(quat).as_matrix()
-        y = rot[:, 1].reshape(1, 3)
-        vertex_sets = {k: v @ rot.T + pos.reshape(1, 3) for k, v in self.vertex_sets.items()}
-        vertex_sets['left_finger'] = vertex_sets['left_finger'] - offset * y
-        vertex_sets['right_finger'] = vertex_sets['right_finger'] + offset * y
-        vertices = np.concatenate(vertex_sets.values(), axis=0)
-        return vertices
 
     def set_gripper_width(self, width):
         # if width > self._max_width:
@@ -137,6 +128,13 @@ class PandaGripper(object):
                         p.changeVisualShape(obj_id, -1, rgbaColor=[1, 0, 0, 1]) if show_col else None
                         return True
         return False
+
+    def change_color(self, rgb=None, a=1.0):
+        if rgb is None:
+            rgba = np.random.uniform(size=3).tolist()+[a]
+        else:
+            rgba = np.asarray(rgb).tolist()+[a]
+        [p.changeVisualShape(self.__getattribute__(com).obj_id, -1, rgbaColor=rgba) for com in self.components]
 
 
 
