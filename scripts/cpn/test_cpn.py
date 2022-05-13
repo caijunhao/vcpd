@@ -3,6 +3,7 @@ from cpn.model import CPN
 from cpn.utils import sample_contact_points, select_gripper_pose, clustering
 from sim.camera import Camera
 from sim.objects import RigidObject, PandaGripper
+from sim.vis import rotate_gripper
 from sim.tray import Tray
 from sim.utils import *
 from sdf import SDF
@@ -47,7 +48,6 @@ def main(args):
     pg.set_pose([-2, -2, -2], [0, 0, 0, 1])
     mesh_list = os.listdir(args.mesh)
     angles = np.arange(cfg['num_angle']) / cfg['num_angle'] * 2 * np.pi
-    basic_rot_mats = np.expand_dims(basic_rot_mat(angles, 'y'), axis=0)  # 1*num_angle*3*3
     # tsdf initialization
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     cpn = CPN()
@@ -159,6 +159,7 @@ def main(args):
         else:
             curr_anti_score = 0
         quat = Rotation.from_matrix(rot).as_quat()
+        # rotate_gripper(end_point_pos, rot, width, cfg['gripper']['depth'], tray.get_tray_ids())
         pg.set_pose(gripper_pos, quat)
         pg.set_gripper_width(width)
         # debug: uncomment for visualization

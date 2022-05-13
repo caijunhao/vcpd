@@ -136,5 +136,5 @@ class PandaGripper(object):
             rgba = np.asarray(rgb).tolist()+[a]
         [p.changeVisualShape(self.__getattribute__(com).obj_id, -1, rgbaColor=rgba) for com in self.components]
 
-
-
+    def remove_gripper(self):
+        [p.removeBody(self.__getattribute__(com).obj_id) for com in self.components]
