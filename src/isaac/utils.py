@@ -2,33 +2,33 @@ import os
 import json
 import numpy as np
 from scipy.spatial.transform import Rotation as R
-import argparse
-parser = argparse.ArgumentParser(description='Stacked scene construction.')
-parser.add_argument('--isaacgym_path',
-                    default='/home/sujc/code/isaacgym/python',
-                    help='path to installed isaac gym(should be like .../isaacgym/python)')
-args = parser.parse_args()
-import sys
-sys.path.append(args.isaacgym_path)
 
+isaacgym_path = '/home/sujc/code/isaacgym/python'
+import sys
+sys.path.append(isaacgym_path)
+
+from sim.utils import basic_rot_mat
 from isaacgym import gymapi
 from isaacgym import gymutil
 from isaacgym import gymtorch
 from isaacgym.torch_utils import *
-
+from sim.camera import *
 import math
 import numpy as np
 import torch
-
+import pymeshlab as ml
+import time
 def get_grasp_pose(obj_name,
                    data_path=None
                    ):
     if data_path is None:
         data_path = '/home/sujc/code/vcpd-master/dataset/grasp_info/train_grasp_info'
-    with open(os.path.join(data_path, '{}_info.json'.format(obj_name)), 'r', encoding='utf8') as f:
-        json_data = json.load(f)
-    if json_data['num_col-free_poses'] == 0:
-        return None, None, None, None
+    json_file = os.path.join(data_path, '{}_info.json'.format(obj_name))
+    if os.path.isfile(json_file):
+        with open(json_file, 'r', encoding='utf8') as f:
+            json_data = json.load(f)
+        if json_data['num_col-free_poses'] == 0:
+            return None, None, None, None
     positions = []
     quats = []
     rots = []
@@ -37,23 +37,34 @@ def get_grasp_pose(obj_name,
     widths = np.load(os.path.join(data_path, '{}_{}.npy'.format(obj_name, 'widths')))
     collisions = np.load(os.path.join(data_path, '{}_{}.npy'.format(obj_name, 'collisions')))
     quaternions = np.load(os.path.join(data_path, '{}_{}.npy'.format(obj_name, 'quaternions')))
+    num_angle = collisions.shape[1]
+    if quaternions.shape[1] == 4:
+        angles = np.arange(num_angle) / num_angle * 2 * np.pi
+        basic_rot_mats = np.expand_dims(basic_rot_mat(angles, 'y'), axis=0)  # 1*num_angle*3*3
+        bases0 = np.expand_dims(Rotation.from_quat(quaternions).as_matrix(), axis=1)  # 1*n*3*3
+        rot0 = np.matmul(bases0, basic_rot_mats) # n*64*3*3
+
     scores = np.load(os.path.join(data_path, '{}_{}.npy'.format(obj_name, 'antipodal_mean')))
     for i in range(centers.shape[0]):
         grasp_ids = np.where(collisions[i] == 0)[0]
         if grasp_ids.shape[0] == 0:
             continue
         center = centers[i]
-        width = widths[i]
         quaternion = quaternions[i]
-        score = scores[i]
-        if score < 0.99:
-            continue
+        # score = scores[i]
+        # if score < 0.99:
+        #     continue
         # if len(positions)>500:
         #     break
         for j in range(grasp_ids.shape[0]):
             grasp_id = grasp_ids[j]
-            quat = quaternion[grasp_id]
-            rot = R.from_quat(quat).as_matrix()
+
+            if quaternions.shape[1] == num_angle:
+                quat = quaternion[grasp_id]
+                rot = R.from_quat(quat).as_matrix()
+            else:
+                rot = rot0[i][grasp_id]
+                quat = R.from_matrix(rot).as_quat()
             pos = center.copy()
             gripper_pos = center.copy() - rot[:, 2] * 0.10327
 
@@ -61,6 +72,10 @@ def get_grasp_pose(obj_name,
             quats.append(quat)
             rots.append(rot)
             gripper_positions.append(gripper_pos)
+    positions = np.array(positions)
+    quats = np.array(quats)
+    rots = np.array(rots)
+    gripper_positions = np.array(gripper_positions)
     return positions, quats, rots, gripper_positions
 
 def asset_preload(dir, num, filename=None, info_path=None):
@@ -126,37 +141,92 @@ def asset_preload(dir, num, filename=None, info_path=None):
         print(filename)
     return asset_paths, asset_names, positions, quats, rots, gripper_positions
 
-def orientation_error(desired, current):
-    cc = quat_conjugate(current)
-    q_r = quat_mul(desired, cc)
-    return q_r[:, 0:3] * torch.sign(q_r[:, 3]).unsqueeze(-1)
+def get_grasp_pose_primitive(obj_name,
+                   data_path=None
+                   ):
+    if data_path is None:
+        data_path = '/home/sujc/code/vcpd-master/dataset/grasp_info/train_grasp_info'
+    json_file = os.path.join(data_path, '{}_info.json'.format(obj_name))
+    if os.path.isfile(json_file):
+        with open(json_file, 'r', encoding='utf8') as f:
+            json_data = json.load(f)
+        if json_data['num_col-free_poses'] == 0:
+            return None, None, None, None
 
-def control_ik(dpose, device="cuda:0"):
-    global damping, j_eef, num_envs
-    # solve damped least squares
-    j_eef_T = torch.transpose(j_eef, 1, 2)
-    lmbda = torch.eye(6, device=device) * (damping ** 2)
-    u = (j_eef_T @ torch.inverse(j_eef @ j_eef_T + lmbda) @ dpose).view(num_envs, 7)
-    return u
+    centers = np.load(os.path.join(data_path, '{}_{}.npy'.format(obj_name, 'centers')))
+    collisions = np.load(os.path.join(data_path, '{}_{}.npy'.format(obj_name, 'collisions')))
+    quaternions = np.load(os.path.join(data_path, '{}_{}.npy'.format(obj_name, 'quaternions')))
+    widths = np.load(os.path.join(data_path, '{}_{}.npy'.format(obj_name, 'widths')))
 
-def control_osc(dpose, device="cuda:0"):
-    global kp, kd, kp_null, kd_null, default_dof_pos_tensor, mm, j_eef, num_envs, dof_pos, dof_vel, hand_vel
-    mm_inv = torch.inverse(mm)
-    m_eef_inv = j_eef @ mm_inv @ torch.transpose(j_eef, 1, 2)
-    m_eef = torch.inverse(m_eef_inv)
-    u = torch.transpose(j_eef, 1, 2) @ m_eef @ (
-        kp * dpose - kd * hand_vel.unsqueeze(-1))
+    num_angle = collisions.shape[1]
+    centers = np.concatenate([np.expand_dims(centers, axis=1)] * 64, axis=1)
+    widths = np.concatenate([np.expand_dims(widths, axis=1)] * 64, axis=1)
+    if quaternions.shape[1] == 4:
+        angles = np.arange(num_angle) / num_angle * 2 * np.pi
+        basic_rot_mats = np.expand_dims(basic_rot_mat(angles, 'y'), axis=0)  # 1*num_angle*3*3
+        bases0 = np.expand_dims(Rotation.from_quat(quaternions).as_matrix(), axis=1)  # 1*n*3*3
+        gripper_rot = np.matmul(bases0, basic_rot_mats) # n*64*3*3
+    else:
+        gripper_rot = Rotation.from_quat(quaternions).as_matrix()
+    gripper_pos = centers - gripper_rot[..., 2] * 0.10327
 
-    # Nullspace control torques `u_null` prevents large changes in joint configuration
-    # They are added into the nullspace of OSC so that the end effector orientation remains constant
-    # roboticsproceedings.org/rss07/p31.pdf
-    j_eef_inv = m_eef @ j_eef @ mm_inv
-    u_null = kd_null * -dof_vel + kp_null * (
-        (default_dof_pos_tensor.view(1, -1, 1) - dof_pos + np.pi) % (2 * np.pi) - np.pi)
-    u_null = u_null[:, :7]
-    u_null = mm @ u_null
-    u += (torch.eye(7, device=device).unsqueeze(0) - torch.transpose(j_eef, 1, 2) @ j_eef_inv) @ u_null
-    return u.squeeze(-1)
+    flag = collisions == 0
+
+    return centers[flag], gripper_rot[flag], gripper_pos[flag], widths[flag], collisions
+
+
+def asset_preload_primitive(dir, obj_name, info_path):
+    count = 0
+
+    for file in os.listdir(os.path.join(dir, obj_name)):
+        if 'urdf' in file:
+            asset_path = file
+
+    position, rot, gripper_pos, width, collision = get_grasp_pose_primitive(obj_name,info_path)
+    if position is None:
+        return None, None, None, None, None, None
+    count += 1
+
+    return asset_path, position, rot, gripper_pos, width, collision
+
+def load_panda(gym, sim):
+    asset_root = "/home/sujc/code/isaacgym/assets"
+    panda_asset_file = "urdf/franka_description/robots/panda.urdf"
+    asset_options = gymapi.AssetOptions()
+    asset_options.armature = 0.01
+    asset_options.fix_base_link = True
+    # asset_options.override_com = True
+    # asset_options.override_inertia = True
+    asset_options.disable_gravity = True
+    asset_options.flip_visual_attachments = True
+    panda_asset = gym.load_asset(sim, asset_root, panda_asset_file, asset_options)
+    obj_prop = gymapi.RigidShapeProperties()
+    obj_prop.friction = 100.0
+    obj_prop.restitution = 0.9
+    obj_prop.rolling_friction = 100.0
+    # gym.set_asset_rigid_shape_properties(panda_asset, [obj_prop])
+    # configure panda dofs
+    panda_dof_props = gym.get_asset_dof_properties(panda_asset)
+    panda_lower_limits = panda_dof_props["lower"]
+    panda_upper_limits = panda_dof_props["upper"]
+    panda_ranges = panda_upper_limits - panda_lower_limits
+
+    # grippers
+    panda_dof_props["driveMode"].fill(gymapi.DOF_MODE_POS)
+    panda_dof_props["stiffness"].fill(800.0)
+    panda_dof_props["damping"].fill(40.0)
+
+    # default dof states and position targets
+    panda_num_dofs = gym.get_asset_dof_count(panda_asset)
+    default_dof_pos = np.zeros(panda_num_dofs, dtype=np.float32)
+    # grippers open
+    default_dof_pos = panda_upper_limits
+
+    default_dof_state = np.zeros(panda_num_dofs, gymapi.DofState.dtype)
+    default_dof_state["pos"] = default_dof_pos
+
+    return default_dof_pos, default_dof_state, panda_asset, panda_dof_props
+
 
 
 def get_obj_file(path):
@@ -171,3 +241,131 @@ def get_obj_file(path):
         obj_files.append(line)
     file.close()
     return obj_files
+
+def get_tray(shift=0, height=0.384, width=0.384, depth=0.1, theta=45, thickness=0.01):
+    d2r = np.deg2rad
+    h, w, d, t = height / 2, width / 2, depth / 2, thickness / 2
+    assert 0 < theta <= 90
+    side_height = depth / np.sin(d2r(theta))
+    s_h = side_height / 2
+    e = 0 if theta == 90 else depth / np.tan(d2r(theta))  # half extend length for each side of groove
+    # compute the normal and tangent components of half thickness
+    n_com, t_com = t * np.cos(d2r(theta)), t * np.sin(d2r(theta))
+    size_list = 2*np.array([[h, w, t], [h + e, s_h, t], [h + e, s_h, t], [s_h, w + e, t], [s_h, w + e, t]])
+    size_list = size_list.tolist()
+    pos_list = [[0, 0, t],
+                 [0, -w - e / 2 - t_com, d + thickness - n_com],
+                 [0, w + e / 2 + t_com, d + thickness - n_com],
+                 [-h - e / 2 - t_com, 0, d + thickness - n_com],
+                 [h + e / 2 + t_com, 0, d + thickness - n_com]]
+    quat_list=[[0, 0, 0, 1],
+               R.from_euler('xyz',[d2r(-theta), d2r(0), d2r(0)]).as_quat(),
+               R.from_euler('xyz',[d2r(theta), d2r(0), d2r(0)]).as_quat(),
+               R.from_euler('xyz',[d2r(0), d2r(theta), d2r(0)]).as_quat(),
+               R.from_euler('xyz',[d2r(0), -d2r(theta), d2r(0)]).as_quat()]
+    pose_list = []
+
+    for i in range(5):
+        pose = gymapi.Transform()
+        pose.p = gymapi.Vec3(pos_list[i][0], pos_list[i][1], pos_list[i][2]) + shift
+        pose.r = gymapi.Quat(quat_list[i][0], quat_list[i][1], quat_list[i][2], quat_list[i][3])
+        pose_list.append(pose)
+    return size_list, pose_list
+
+def add_noise(depth,
+              intrinsic,
+              lateral=True,
+              axial=True,
+              missing_value=True,
+              default_angle=85.0):
+    """
+    Add noise according to kinect noise model.
+    Please refer to the paper "Modeling Kinect Sensor Noise for Improved 3D Reconstruction and Tracking".
+    """
+    h, w = depth.shape
+    point_cloud = compute_point_cloud(depth, intrinsic)
+    surface_normal = compute_surface_normal_central_difference(point_cloud)
+    # surface_normal = self.compute_surface_normal_least_square(point_cloud)
+    cos = np.squeeze(np.dot(surface_normal, np.array([[0.0, 0.0, 1.0]], dtype=surface_normal.dtype).T))
+    angles = np.arccos(cos)
+    # adjust angles that don't satisfy the domain of noise model ([0, pi/2) for kinect noise model).
+    cos[angles >= np.pi / 2] = np.cos(np.deg2rad(default_angle))
+    angles[angles >= np.pi / 2] = np.deg2rad(default_angle)
+    # add lateral noise
+    if lateral:
+        sigma_lateral = 0.8 + 0.035 * angles / (np.pi / 2 - angles)
+        x, y = np.meshgrid(np.arange(w), np.arange(h))
+        # add noise offset to x axis
+        new_x = x + np.round(np.random.normal(scale=sigma_lateral)).astype(np.int)
+        # remove points that are out of range
+        invalid_ids = np.logical_or(new_x < 0, new_x >= w)
+        new_x[invalid_ids] = x[invalid_ids]
+        # add noise offset to y axis
+        new_y = y + np.round(np.random.normal(scale=sigma_lateral)).astype(np.int)
+        # remove points that are out of range
+        invalid_ids = np.logical_or(new_y < 0, new_y >= h)
+        new_y[invalid_ids] = y[invalid_ids]
+        depth = depth[new_y, new_x]
+    # add axial noise
+    if axial:
+        # axial noise
+        sigma_axial = 0.0012 + 0.0019 * (depth - 0.4) ** 2
+        depth = np.random.normal(depth, sigma_axial)
+    # remove some value according to the angle
+    # the larger the angle, the higher probability the depth value is set to zero
+    if missing_value:
+        missing_mask = np.random.uniform(size=cos.shape) > cos
+        depth[missing_mask] = 0.0
+    return depth
+
+def compute_point_cloud(depth, intrinsic):
+    """
+    Compute point cloud by depth image and camera intrinsic matrix.
+    :param depth: A float numpy array representing the depth image.
+    :param intrinsic: A 3x3 numpy array representing the camera intrinsic matrix
+    :return: Point cloud in camera space.
+    """
+    h, w = depth.shape
+    h_map, w_map = np.meshgrid(np.arange(h), np.arange(w), indexing='ij')
+    image_coordinates = np.stack([w_map, h_map, np.ones_like(h_map, dtype=np.float32)], axis=2).astype(np.float32)
+    inv_intrinsic = np.linalg.inv(intrinsic)
+    camera_coordinates = np.expand_dims(depth, axis=2) * np.dot(image_coordinates, inv_intrinsic.T)
+    return camera_coordinates
+
+def compute_surface_normal_central_difference(point_cloud):
+    """
+    Compute surface normal from point cloud.
+    Notice: it only applies to point cloud map represented in camera space.
+    The x axis directs in width direction, and y axis is in height direction.
+    :param point_cloud: An HxWx3-d numpy array representing the point cloud map.The point cloud map
+                        is restricted to the map in camera space without any other transformations.
+    :return: An HxWx3-d numpy array representing the corresponding normal map.
+    """
+    h, w, _ = point_cloud.shape
+    gradient_y, gradient_x, _ = np.gradient(point_cloud)
+    normal = np.cross(gradient_x, gradient_y, axis=2)
+    normal[normal == np.nan] = 0
+    norm = np.linalg.norm(normal, axis=2, keepdims=True)
+    flag = norm[..., 0] != 0
+    normal[flag] = normal[flag] / norm[flag]
+    return normal
+
+class PandaGripper(object):
+    def __init__(self, asset_path):
+        self.components = ['hand', 'left_finger', 'right_finger']
+        self.vertex_sets = dict()
+        ms = ml.MeshSet()
+        for component in self.components:
+            col2_path = os.path.join(asset_path, component+'_col2.obj')
+            ms.load_new_mesh(col2_path)
+            self.vertex_sets[component] = ms.current_mesh().vertex_matrix()
+
+class Robotiq(object):
+    def __init__(self, asset_path):
+        self.components = ['rq85']
+        self.vertex_sets = dict()
+        ms = ml.MeshSet()
+        for component in self.components:
+            col_path = os.path.join(asset_path, component+'.obj')
+            ms.load_new_mesh(col_path)
+            self.vertex_sets[component] = ms.current_mesh().vertex_matrix()
