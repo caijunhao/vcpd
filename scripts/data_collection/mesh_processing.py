@@ -198,6 +198,26 @@ def primitive(mesh_path, output):
                 f.write(xml_str)
 
 
+def google_16k(folder_path, output):
+    ms = ml.MeshSet()
+    for obj_name in os.listdir(os.path.join(folder_path)):
+        print(obj_name)
+        mesh_path = os.path.join(folder_path, obj_name, 'google_16k', 'textured.obj')
+        obj_path = os.path.join(output, obj_name)
+        if not os.path.exists(obj_path):
+            os.makedirs(obj_path)
+        ms.load_new_mesh(mesh_path)
+        ms.save_current_mesh(os.path.join(obj_path, obj_name + '_vis.obj'))
+        ms.meshing_decimation_quadric_edge_collapse_with_texture()
+        ms.meshing_decimation_quadric_edge_collapse_with_texture()
+        ms.meshing_decimation_quadric_edge_collapse_with_texture()
+        ms.save_current_mesh(os.path.join(obj_path, obj_name + '_col.obj'))
+        ms.save_current_mesh(os.path.join(obj_path, obj_name + '.obj'))
+        xml_str = get_obj_urdf(obj_name, m=1.0, s=1.0)
+        with open(os.path.join(obj_path, obj_name + '.urdf'), 'w') as f:
+            f.write(xml_str)
+
+
 def main(args):
     if not os.path.exists(args.output):
         os.makedirs(args.output)
