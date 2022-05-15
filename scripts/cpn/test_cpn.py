@@ -128,8 +128,8 @@ def main(args):
             rgb, depth, mask = cam.get_camera_image()
             rgb_list.append(rgb), depth_list.append(depth), pose_list.append(cam.pose), intr_list.append(cam.intrinsic)
             # noise_depth = camera.add_noise(depth)
-            cam.sample_a_pose_from_a_sphere(np.array(cfg['camera']['target_position']),
-                                            cfg['camera']['eye_position'][-1])
+            radius = np.random.uniform(cfg['camera']['z_min'], cfg['camera']['z_max'])
+            cam.sample_a_pose_from_a_sphere(np.array(cfg['camera']['target_position']), radius)
         for ri, di, pi, ii, idx in zip(rgb_list, depth_list, pose_list, intr_list, range(len(intr_list))):
             ri = ri[..., 0:3].astype(np.float32)
             di = cam.add_noise(di).astype(np.float32)
@@ -180,6 +180,7 @@ def main(args):
         [p.removeBody(o.obj_id) for o in static_list]
         p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
         tsdf.reset()
+        cam.randomize_fov()
         i += 1
 
 

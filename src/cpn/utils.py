@@ -40,11 +40,11 @@ def extract_sdf(pts, volumes, origin, resolution, mode='bilinear', padding_mode=
 
 
 def sample_contact_points(tsdf, th_a=30, th_s=0.2, start=0.01, end=0.06, num_step=50,
-                          post_processed=True, gaussian_blur=True):
+                          post_processed=True, gaussian_blur=True, step_size=2):
     dtype = tsdf.dtype
     dev = tsdf.dev
     th_a = torch.deg2rad(torch.tensor(th_a, dtype=dtype, device=dev))
-    v, _, n, _ = tsdf.compute_mesh(step_size=3)
+    v, _, n, _ = tsdf.compute_mesh(use_post_processed=post_processed, gaussian_blur=gaussian_blur, step_size=step_size)
     v, n = torch.tensor(v, dtype=dtype, device=dev), torch.tensor(n, dtype=dtype, device=dev)
     flag_s = torch.abs(tsdf.extract_sdf(v, post_processed=post_processed, gaussian_blur=gaussian_blur)) < th_s
     v, n = v[flag_s], n[flag_s]
