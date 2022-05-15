@@ -1,3 +1,4 @@
+# tsdf params
 c_x: 0.4922  # center of the workspace in x-axis
 c_y: 0.0175  # center y of the workspace in y-axis
 c_y_aligned: 0.0325  # use c_y_aligned when aligning depth map to rgb image in rs
@@ -5,15 +6,22 @@ c_z: 0.303  # center z of the workspace in z-axis
 sdf_h: 128  # 0.384
 sdf_w: 128  # 0.384
 sdf_d: 96  # 0.288
-resolution: 0.003
+voxel_length: 0.003
+rate: 30  # the maximal fps for tsdf fusion
 
-ee_state: /franka_ros_interface/custom_franka_state_controller/tip_state
+# rs params
 aligned: true
 advanced: advanced
 noise_model: true
 use_color: true
 disparity_shift: 24
-rate: 30  # the maximal fps for tsdf fusion
+fps: 30  # the maximal fps for tsdf fusion
+# quadratic curve fitting parameters for realsense depth error model
+a0: -0.9607773699002962
+a1: -0.0102477134049761
+a2: -4.253725936993798
+
+ee_state: /franka_ros_interface/custom_franka_state_controller/tip_state
 
 
 p_ee2cam:  # 7-d pose from O_T_EE to left depth camera
@@ -24,7 +32,7 @@ p_ee2cam:  # 7-d pose from O_T_EE to left depth camera
   - 0.0  # x
   - 0.0  # y
   - 0.7071067811865476  # z
-p_cam2ee_aligned:  # 7-d pose from O_T_EE to rgb camera
+p_ee2cam_aligned:  # 7-d pose from O_T_EE to rgb camera
   - 0.030400
   - -0.0325
   - -0.045307

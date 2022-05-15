@@ -1,0 +1,9 @@
+c_x: 0.4922  # center of the workspace in x-axis
+c_y: 0.0175  # center y of the workspace in y-axis
+c_y_aligned: 0.0325  # use c_y_aligned when aligning depth map to rgb image in rs
+c_z: 0.303  # center z of the workspace in z-axis
+sdf_h: 128  # 0.384
+sdf_w: 128  # 0.384
+sdf_d: 96  # 0.288
+voxel_length: 0.003
+rate: 30  # the maximal fps for tsdf fusion

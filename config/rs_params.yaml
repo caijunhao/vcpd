@@ -1,0 +1,11 @@
+aligned: true
+use_color: true
+advanced: advanced
+noise_model: true
+disparity_shift: 24
+fps: 30  # fps
+
+# quadratic curve fitting parameters for realsense depth error model
+a0: -0.9607773699002962
+a1: -0.0102477134049761
+a2: -4.253725936993798
