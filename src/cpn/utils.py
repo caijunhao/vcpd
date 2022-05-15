@@ -39,13 +39,14 @@ def extract_sdf(pts, volumes, origin, resolution, mode='bilinear', padding_mode=
     return sdf_vec
 
 
-def sample_contact_points(tsdf, th_a=30, th_s=0.2, start=0.01, end=0.06, num_step=50):
+def sample_contact_points(tsdf, th_a=30, th_s=0.2, start=0.01, end=0.06, num_step=50,
+                          post_processed=True, gaussian_blur=True):
     dtype = tsdf.dtype
     dev = tsdf.dev
     th_a = torch.deg2rad(torch.tensor(th_a, dtype=dtype, device=dev))
     v, _, n, _ = tsdf.compute_mesh(step_size=3)
     v, n = torch.tensor(v, dtype=dtype, device=dev), torch.tensor(n, dtype=dtype, device=dev)
-    flag_s = torch.abs(tsdf.extract_sdf(v)) < th_s
+    flag_s = torch.abs(tsdf.extract_sdf(v, post_processed=post_processed, gaussian_blur=gaussian_blur)) < th_s
     v, n = v[flag_s], n[flag_s]
     # filter out contact points whose surface normals are outside the angle threshold
     flag_a = torch.abs(n[:, 2]) <= torch.cos(torch.pi / 2 - th_a)
@@ -54,8 +55,8 @@ def sample_contact_points(tsdf, th_a=30, th_s=0.2, start=0.01, end=0.06, num_ste
     samples = n.unsqueeze(dim=1) * (start + torch.arange(num_step, dtype=dtype, device=dev).reshape(1, -1, 1) * stride)
     vs = v.unsqueeze(dim=1) - samples  # N * M * 3
     num_v = vs.shape[0]
-    sdv = tsdf.extract_sdf(vs.view(-1, 3)).view(num_v, num_step)  # N * M
-    sign = (sdv >= 0).to(torch.int)
+    sdv = tsdf.extract_sdf(vs.view(-1, 3),
+                           post_processed=post_processed, gaussian_blur=gaussian_blur).view(num_v, num_step)  # N * M
     min_sdv, min_ids = torch.min(torch.abs(sdv), dim=1)  # N, N
     flag = torch.logical_and(min_sdv < th_s, torch.logical_and(min_ids > 0, min_ids < num_step - 1))
     v, vs, sdv, min_sdv, min_ids = v[flag], vs[flag], sdv[flag], min_sdv[flag], min_ids[flag]  # N'
@@ -72,7 +73,8 @@ def sample_contact_points(tsdf, th_a=30, th_s=0.2, start=0.01, end=0.06, num_ste
 def select_gripper_pose(tsdf, pg, score, cp1, cp2, gripper_depth,
                         num_angle=32, max_width=0.08,
                         th_s=0.997, th_c=0.999,
-                        check_tray=True):
+                        check_tray=True,
+                        post_processed=True, gaussian_blur=True):
     """
     Select collision-free pose according to the quality scores of the contact points.
     :param tsdf: the SDF instance
@@ -86,6 +88,8 @@ def select_gripper_pose(tsdf, pg, score, cp1, cp2, gripper_depth,
     :param th_s:
     :param th_c:
     :param check_tray:
+    :param post_processed:
+    :param gaussian_blur:
     :return: 4 torch tensor representing sets of gripper position, rotations, and contact points
     """
     dtype = score.dtype
@@ -128,7 +132,8 @@ def select_gripper_pose(tsdf, pg, score, cp1, cp2, gripper_depth,
     vs = torch.matmul(rots, vs.permute(1, 0).unsqueeze(0).unsqueeze(0)).permute(0, 1, 3, 2) + gripper_pos.unsqueeze(2)  # num_cp * num_angle * num_v * 3
     vs[..., n_h:n_h+n_l, :] = vs[..., n_h:n_h+n_l, :] - offset * ys  # left finger vertices
     vs[..., n_h+n_l:n_h+n_l+n_r, :] = vs[..., n_h+n_l:n_h+n_l+n_r, :] + offset * ys  # right finger vertices
-    sdv = tsdf.extract_sdf(vs.reshape(-1, 3), gaussian_blur=True).reshape(num_cp, num_angle, num_v)
+    sdv = tsdf.extract_sdf(vs.reshape(-1, 3),
+                           post_processed=post_processed, gaussian_blur=gaussian_blur).reshape(num_cp, num_angle, num_v)
     if check_tray:
         vs_ids = tsdf.get_ids(vs.reshape(-1, 3)).reshape(num_cp, num_angle, num_v, 3)
         oob_flag = torch.logical_or(torch.logical_or(vs_ids[..., 0] < 0, vs_ids[..., 0] >= tsdf.shape[0]),

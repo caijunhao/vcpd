@@ -17,9 +17,9 @@ def cpn_node():
     # Initialize CPNCommander
     aligned = cfg('aligned')
     c_y = cfg('c_y_aligned') if aligned else cfg('c_y')
-    res = cfg('resolution')
-    vol_bnd = np.array([[cfg('c_x')-cfg('sdf_h')/2*res, c_y-cfg('sdf_w')/2*res, cfg('c_z')-cfg('sdf_d')/2*res],
-                        [cfg('c_x')+cfg('sdf_h')/2*res, c_y+cfg('sdf_w')/2*res, cfg('c_z')+cfg('sdf_d')/2*res]])
+    vl = cfg('voxel_length')
+    vol_bnd = np.array([[cfg('c_x')-cfg('sdf_h')/2*vl, c_y-cfg('sdf_w')/2*vl, cfg('c_z')-cfg('sdf_d')/2*vl],
+                        [cfg('c_x')+cfg('sdf_h')/2*vl, c_y+cfg('sdf_w')/2*vl, cfg('c_z')+cfg('sdf_d')/2*vl]])
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = CPN()
     path = cfg('model_path')
@@ -35,7 +35,7 @@ def cpn_node():
         col2_path = os.path.join('assets', component + '_col2.obj')
         ms.load_new_mesh(col2_path)
         vertex_sets[component] = ms.current_mesh().vertex_matrix()
-    vc = CPNCommander(vol_bnd, res, model, vertex_sets)
+    vc = CPNCommander(vol_bnd, vl, model, vertex_sets)
     _ = rospy.Subscriber("/cpn/flag", Bool, vc.callback_cpn)
     gripper_pose_pub = rospy.Publisher('/cpn/gripper_pose', GripperPose, queue_size=1)
     rospy.loginfo('vpn_node is ready')

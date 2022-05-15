@@ -188,7 +188,7 @@ class CPNCommander(object):
     def inference(self):
         sdf_volume = self.request_a_volume()
         self.tsdf.sdf_vol = torch.from_numpy(sdf_volume).to(self.device)
-        cp1, cp2 = sample_contact_points(self.tsdf)
+        cp1, cp2 = sample_contact_points(self.tsdf, post_processed=False, gaussian_blur=False)
         ids_cp1, ids_cp2 = self.tsdf.get_ids(cp1), self.tsdf.get_ids(cp2)
         sample = dict()
         sample['sdf_volume'] = self.tsdf.sdf_vol.unsqueeze(dim=0).unsqueeze(dim=0)
@@ -197,7 +197,8 @@ class CPNCommander(object):
         out = torch.squeeze(self.cpn.forward(sample))
         gripper_pos, rot, width, cp1, cp2 = select_gripper_pose(self.tsdf, self.gpr_pts,
                                                                 out, cp1, cp2, self.gpr_d,
-                                                                check_tray=False)
+                                                                check_tray=False,
+                                                                post_processed=False, gaussian_blur=False)
         gripper_pos, rot, width, cp1, cp2 = clustering(gripper_pos, rot, width, cp1, cp2)
         msg = GripperPose()
         msg.cp1.x, msg.cp1.y, msg.cp1.z = cp1.tolist()
