@@ -245,8 +245,8 @@ def main(args):
                 np.save(os.path.join(path, '{:04d}_pos&quat.npy'.format(j)), np.concatenate(cam.get_pose()))
                 np.save(os.path.join(path, '{:04d}_intrinsic.npy'.format(j)), cam.intrinsic)
             if cfg['scene']['pose_sampling'] == 'sphere':
-                cam.sample_a_pose_from_a_sphere(np.array(cfg['camera']['target_position']),
-                                                cfg['camera']['eye_position'][-1])
+                radius = np.random.uniform(cfg['camera']['z_min'], cfg['camera']['z_max'])
+                cam.sample_a_pose_from_a_sphere(np.array(cfg['camera']['target_position']), radius)
             elif cfg['scene']['pose_sampling'] == 'cube':
                 cam.sample_a_position(cfg['camera']['x_min'], cfg['camera']['x_max'],
                                       cfg['camera']['y_min'], cfg['camera']['y_max'],
@@ -317,6 +317,9 @@ def main(args):
         if discard:
             continue
         i += 1
+        if np.random.uniform() < 0.1:
+            cam.randomize_fov()
+            print('randomize fov: {}'.format(cam.curr_fov))
 
 
 if __name__ == '__main__':

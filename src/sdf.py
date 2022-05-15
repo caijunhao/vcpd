@@ -38,6 +38,7 @@ class SDF(object):
         self.w_vol = torch.ones_like(self.sdf_vol, dtype=self.dtype, device=device) * 1e-7
         # record if the voxel has been scan at least once
         self.pos_vol = torch.zeros_like(self.sdf_vol, dtype=torch.bool, device=device)  # positive-value voxels
+        self.view_vol = torch.zeros_like(self.sdf_vol, dtype=torch.bool, device=device)  # voxels that are inside the view frustum
         if self.rgb:
             self.rgb_vol = torch.ones_like(self.sdf_vol, dtype=self.dtype, device=device)
             self.rgb_vol = self.rgb_vol * (255 * 256 ** 2 + 255 * 256 + 255)
@@ -83,6 +84,8 @@ class SDF(object):
         valid_pos = voxel_pos_c[voxel_flag]
         distance, depth_flag = self.__getattribute__(fd)(depth, valid_ids, valid_pos, intrinsic)
         pos_flag = distance >= 0
+        view_x, view_y, view_z = self.voxel_ids[voxel_flag][depth_flag].unbind(dim=-1)
+        self.view_vol[view_x, view_y, view_z] = True
         pos_x, pos_y, pos_z = self.voxel_ids[voxel_flag][depth_flag][pos_flag].unbind(dim=-1)
         self.pos_vol[pos_x, pos_y, pos_z] = True
         # self.neg_vol[voxel_flag][depth_flag] = distance < 0
@@ -135,6 +138,7 @@ class SDF(object):
         self.sdf_vol = torch.ones_like(self.sdf_vol, dtype=self.dtype, device=self.dev)
         self.w_vol = torch.ones_like(self.sdf_vol, dtype=self.dtype, device=self.dev) * 1e-7
         self.pos_vol = torch.zeros_like(self.sdf_vol, dtype=torch.bool, device=self.dev)
+        self.view_vol = torch.zeros_like(self.sdf_vol, dtype=torch.bool, device=self.dev)
         if self.rgb:
             self.rgb_vol = torch.ones_like(self.sdf_vol, dtype=self.dtype, device=self.dev)
             self.rgb_vol = self.rgb_vol * (255 * 256 ** 2 + 255 * 256 + 255)
@@ -233,7 +237,9 @@ class SDF(object):
         # if the initial view frustum includes the entire volume space,
         # we can use weight volume to find occupied space
         sdf_vol = self.sdf_vol.clone()
-        in_obj_ids = torch.logical_not(self.pos_vol) * (self.sdf_vol == 1)
+        in_obj_ids = torch.logical_and(self.view_vol,
+                                       torch.logical_and(torch.logical_not(self.pos_vol),
+                                                         self.sdf_vol == 1))
         sdf_vol[in_obj_ids] = -1.0
         return sdf_vol
 

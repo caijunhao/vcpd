@@ -18,8 +18,8 @@
     {
         "width": 640,
         "height": 480,
-        "fov": 57,
-        "fov_error": 3,
+        "fov": 42,
+        "fov_error": 1,
         "eye_position": [0, 0, 0.67],
         "target_position": [0, 0, 0],
         "up_vector": [-1, 0, 0],
@@ -35,7 +35,7 @@
     "scene":
     {
         "obj": 20,
-        "trial": 777,
+        "trial": 1000,
         "normal_threshold": 0.707,
         "frame": 20,
         "wait": 10,
