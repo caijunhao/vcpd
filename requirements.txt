@@ -7,4 +7,5 @@ trimesh==3.9.35
 pymeshlab==2022.2.post2
 numpy
 tensorboard
+numpy-quaternion
 isaacgym

@@ -53,6 +53,8 @@ find_package(catkin REQUIRED COMPONENTS
  add_message_files(
    FILES
    Volume.msg
+   GripperPose.msg
+   EEPose.msg
  )
 
 ## Generate services in the 'srv' folder
@@ -164,15 +166,15 @@ include_directories(
 
 ## Mark executable scripts (Python etc.) for installation
 ## in contrast to setup.py, you can choose the destination
-# catkin_install_python(PROGRAMS
-#   scripts/nodes/tsdf_node.py
-#   scripts/nodes/tsdf_node2.py
+ catkin_install_python(PROGRAMS
+   scripts/nodes/tsdf_fusion.py
+   scripts/nodes/cpn_node.py
 #   scripts/nodes/vpn_node.py
 #   scripts/nodes/panda_node.py
 #   scripts/nodes/main_node.py
 #   scripts/nodes/transfer_node.py
-#   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
-# )
+   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+ )
 
 ## Mark executables for installation
 ## See http://docs.ros.org/melodic/api/catkin/html/howto/format1/building_executables.html

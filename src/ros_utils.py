@@ -1,8 +1,10 @@
 from vcpd.srv import RequestVolume, RequestVolumeRequest, RequestVolumeResponse
+from vcpd.msg import Volume, GripperPose
 from cpn.utils import sample_contact_points, select_gripper_pose, clustering
 from sdf import SDF
-from scipy.spatial.transform.rotation import Rotation
+from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import PointCloud2, PointField
+import quaternion
 import numpy as np
 import torch
 import rospy
@@ -19,17 +21,30 @@ class Pose(object):
     def __init__(self, array):
         array = np.asanyarray(array)
         dtype = array.dtype
-        if array.shape[0] == 7:
-            self.pos_n_quat = array
-            self.pose = np.eye(4, dtype=dtype)
-            self.pose[0:3, 0:3] = Rotation.from_quat(array[3:7]).as_matrix()
-            self.pose[0:3, 3] = array[0:3]
+        if array.shape[0] == 7:  # px, py, pz, w, x, y, z
+            self._pos_n_quat = array
+            self._pose = np.eye(4, dtype=dtype)
+            # https://github.com/moble/quaternion/blob/main/src/quaternion/__init__.py#L73
+            self._pose[0:3, 0:3] = quaternion.as_rotation_matrix(quaternion.from_float_array(array[3:7]))
+            self._pose[0:3, 3] = array[0:3]
         elif array.shape[0] == 4 and array.shape[1] == 4:
-            self.pose = array
-            self.pos_n_quat = np.concatenate([array[0:3], Rotation.from_matrix(array[0:3, 0:3]).as_quat()])
+            self._pose = array
+            quat = quaternion.as_float_array(quaternion.from_rotation_matrix(array[0:3, 0:3]))
+            self._pos_n_quat = np.concatenate([array[0:3], quat])
+        else:
+            raise ValueError('the array does not match the required shape, please check.')
 
     def __call__(self):
-        return self.pose
+        return self._pose
+
+    def rot(self):
+        return self._pose[0:3, 0:3]
+
+    def quat(self):
+        return self._pos_n_quat[3:7]
+
+    def pos(self):
+        return self._pos_n_quat[0:3]
 
 
 class SDFCommander(object):
@@ -47,7 +62,7 @@ class SDFCommander(object):
         self.valid_flag = False  # flag to specify if it is valid to response to the request
 
     def callback_t_base2ee(self, msg):
-        ee_pose = np.asarray(msg.O_T_EE).reshape((4, 4), order='F').astype(np.float32)
+        ee_pose = np.asarray(msg.pose).reshape((4, 4), order='F').astype(np.float32)
         self.t_base2ee = Pose(ee_pose)
 
     def callback_enable(self, msg):
@@ -187,8 +202,8 @@ class CPNCommander(object):
         msg = GripperPose()
         msg.cp1.x, msg.cp1.y, msg.cp1.z = cp1.tolist()
         msg.cp2.x, msg.cp2.y, msg.cp2.z = cp2.tolist()
-        quat = Rotation.from_matrix(rot).as_quat().tolist()
-        msg.orientation.x, msg.orientation.y, msg.orientation.z, msg.orientation.w = quat
+        msg.av.x, msg.av.y, msg.av.z = rot[:, 2].tolist()
+        msg.gv.x, msg.gv.y, msg.gv.z = rot[:, 1].tolist()
         msg.width = width
         return msg
 
