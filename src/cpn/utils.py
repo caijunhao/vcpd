@@ -39,7 +39,7 @@ def extract_sdf(pts, volumes, origin, resolution, mode='bilinear', padding_mode=
     return sdf_vec
 
 
-def sample_contact_points(tsdf, th_a=30, th_s=0.2, start=0.01, end=0.06, num_step=50,
+def sample_contact_points(tsdf, th_a=30, th_s=0.2, start=0.01, end=0.08, num_step=50,
                           post_processed=True, gaussian_blur=True, step_size=2):
     dtype = tsdf.dtype
     dev = tsdf.dev

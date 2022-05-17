@@ -127,9 +127,14 @@ def main(args):
         for j in range(cfg['test']['frame']):
             rgb, depth, mask = cam.get_camera_image()
             rgb_list.append(rgb), depth_list.append(depth), pose_list.append(cam.pose), intr_list.append(cam.intrinsic)
-            # noise_depth = camera.add_noise(depth)
-            radius = np.random.uniform(cfg['camera']['z_min'], cfg['camera']['z_max'])
-            cam.sample_a_pose_from_a_sphere(np.array(cfg['camera']['target_position']), radius)
+            if cfg['test']['pose_sampling'] == 'sphere':
+                radius = np.random.uniform(cfg['camera']['z_min'], cfg['camera']['z_max'])
+                cam.sample_a_pose_from_a_sphere(np.array(cfg['camera']['target_position']), radius)
+            elif cfg['test']['pose_sampling'] == 'cube':
+                cam.sample_a_position(cfg['camera']['x_min'], cfg['camera']['x_max'],
+                                      cfg['camera']['y_min'], cfg['camera']['y_max'],
+                                      cfg['camera']['z_min'], cfg['camera']['z_max'],
+                                      cfg['camera']['up_vector'])
         for ri, di, pi, ii, idx in zip(rgb_list, depth_list, pose_list, intr_list, range(len(intr_list))):
             ri = ri[..., 0:3].astype(np.float32)
             di = cam.add_noise(di).astype(np.float32)
@@ -211,7 +216,7 @@ if __name__ == '__main__':
                         type=str,
                         help='id of nvidia device.')
     parser.add_argument('--seed',
-                        default=177,
+                        default=777,
                         type=int,
                         help='random seed for torch and numpy random number generator.')
     main(parser.parse_args())
