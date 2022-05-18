@@ -169,6 +169,7 @@ include_directories(
  catkin_install_python(PROGRAMS
    scripts/nodes/tsdf_fusion.py
    scripts/nodes/cpn_node.py
+   scripts/nodes/franka_ee_pose.py
 #   scripts/nodes/vpn_node.py
 #   scripts/nodes/panda_node.py
 #   scripts/nodes/main_node.py

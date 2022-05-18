@@ -30,7 +30,7 @@ class Pose(object):
         elif array.shape[0] == 4 and array.shape[1] == 4:
             self._pose = array
             quat = quaternion.as_float_array(quaternion.from_rotation_matrix(array[0:3, 0:3]))
-            self._pos_n_quat = np.concatenate([array[0:3], quat])
+            self._pos_n_quat = np.concatenate([array[0:3, 3], quat])
         else:
             raise ValueError('the array does not match the required shape, please check.')
 

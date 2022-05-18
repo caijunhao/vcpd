@@ -1,3 +1,5 @@
 std_msgs/Header header
 
-float64[16] pose # Measured pose from base frame to end effector, column-major
+# Measured pose from base frame to end effector, column-major
+# The representation is device-dependent
+float64[16] pose

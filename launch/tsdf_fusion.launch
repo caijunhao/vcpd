@@ -1,6 +1,8 @@
 <?xml version="1.0"?>
 <launch>
+    <node pkg="vcpd" name="pose_message_converter" type="franka_ee_pose.py" output="screen" />
     <node pkg="vcpd" name="tsdf_node" type="tsdf_fusion.py" output="screen" />
-        <rosparam command="load" file="$(find vcpd)/config/tsdf_params.yaml">
-        <rosparam command="load" file="$(find vcpd)/config/rs_params.yaml">
+        <rosparam command="load" file="$(find vcpd)/config/tsdf_params.yaml" />
+        <rosparam command="load" file="$(find vcpd)/config/rs_params.yaml" />
+        <rosparam command="load" file="$(find vcpd)/config/rs_params.yaml" />
 </launch>
