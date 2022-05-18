@@ -35,10 +35,10 @@ def cpn_node():
         col2_path = os.path.join('assets', component + '_col2.obj')
         ms.load_new_mesh(col2_path)
         vertex_sets[component] = ms.current_mesh().vertex_matrix()
-    vc = CPNCommander(vol_bnd, vl, model, vertex_sets)
+    vc = CPNCommander(vol_bnd, vl, model, vertex_sets, gripper_depth=cfg('gripper_depth'), device=device)
     _ = rospy.Subscriber("/cpn/flag", Bool, vc.callback_cpn)
     gripper_pose_pub = rospy.Publisher('/cpn/gripper_pose', GripperPose, queue_size=1)
-    rospy.loginfo('vpn_node is ready')
+    rospy.loginfo('cpn_node is ready')
     while not rospy.is_shutdown():
         if vc.trigger_flag:
             b = time.time()

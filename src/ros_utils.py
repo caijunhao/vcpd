@@ -153,8 +153,7 @@ class SDFCommander(object):
 
 
 class CPNCommander(object):
-    def __init__(self, volume_bounds, resolution, model, gripper_points, gripper_depth=0.10327):
-        device = model.device
+    def __init__(self, volume_bounds, resolution, model, gripper_points, gripper_depth, device):
         self.cpn = model
         self.tsdf = SDF(volume_bounds, resolution, device=device)
         self.volume_bounds = volume_bounds
