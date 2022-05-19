@@ -65,6 +65,7 @@ def tsdf_node():
         rospy.logwarn('no gpu found, use cpu for tsdf instead')
     tsdf = SDF(vol_bnd, vl, rgb=True, device=device)
     pcl_pub = rospy.Publisher("/tsdf/pcl", PointCloud2, queue_size=1)
+    # add threading lock to avoid refreshing the buffer while reading at the same time
     sc = SDFCommander(tsdf, pcl_pub)
     # subscribe topics
     _ = rospy.Subscriber('/ee_pose', EEPose, sc.callback_t_base2ee, queue_size=1)
@@ -74,8 +75,6 @@ def tsdf_node():
     _ = rospy.Subscriber("/tsdf/pub_pcl", Bool, sc.callback_pcl)
     # add service to transmit sdf volume
     s = rospy.Service('request_a_volume', RequestVolume, sc.handle_send_tsdf_volume)
-    # add threading lock to avoid refreshing the buffer while reading at the same time
-    lock = threading.Lock()
     rospy.loginfo('tsdf_node is ready')
     while not rospy.is_shutdown():
         if sc.start_flag:
@@ -90,17 +89,14 @@ def tsdf_node():
                 rospy.logwarn('no depth frame received')
                 continue
             depth = np.asanyarray(depth_frame.get_data())
-            color = np.asanyarray(color_frame.get_data()).astype(np.float32) if cfg('use_color') else None
-            lock.acquire()
-            m_base2ee = copy.deepcopy(sc.t_base2ee())  # current pose from ee to base
-            lock.release()
-            m_base2cam = m_base2ee @ t_ee2cam()
+            color = np.asanyarray(color_frame.get_data()) if cfg('use_color') else None
+            m_base2cam = sc.m_base2ee @ t_ee2cam()
             zero_flag = np.logical_or(depth < 100, depth > 1000)  # depth value is always smaller than 1000 in our task
             depth = depth / 1000.0
             if cfg('noise_model'):
                 depth = depth + np.exp(cfg('a0') * depth ** 2 + cfg('a1') * depth + cfg('a2'))
             depth[zero_flag] = 0.0
-            tsdf.integrate(depth, intrinsic, m_base2cam, rgb=color)
+            sc.tsdf_integrate(depth, intrinsic, m_base2cam, rgb=color)
             rospy.loginfo("latest frame processed...")
             sc.valid_flag = True  # valid_flag will be true once visual data is feed into the volume
             e = time.time()
@@ -111,16 +107,9 @@ def tsdf_node():
                 rospy.sleep(1/cfg('rate')-elapse_time)
                 rospy.loginfo('process rate: {}Hz'.format(cfg('rate')))
         if sc.reset_flag:
-            tsdf.reset()
-            sc.reset_flag = False
-            sc.valid_flag = False
+            sc.reset()
         if sc.save_flag:
-            if sc.valid_flag:
-                tsdf.write_mesh('out.ply', *tsdf.compute_mesh())
-            else:
-                rospy.logwarn('no visual data is merged into the volume currently, '
-                              'no mesh will be saved at this moment.')
-            sc.save_flag = False
+            sc.save_mesh('out.ply')
 
 
 if __name__ == '__main__':

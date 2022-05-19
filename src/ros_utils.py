@@ -1,13 +1,18 @@
 from vcpd.srv import RequestVolume, RequestVolumeRequest, RequestVolumeResponse
 from vcpd.msg import Volume, GripperPose
+from franka_msgs.msg import ErrorRecoveryActionGoal
 from cpn.utils import sample_contact_points, select_gripper_pose, clustering
 from sdf import SDF
 from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import PointCloud2, PointField
+from std_msgs.msg import Bool, String
 import quaternion
 import numpy as np
 import torch
 import rospy
+import threading
+import time
+import copy
 
 
 def from_rs_intr_to_mat(rs_intrinsics):
@@ -61,9 +66,14 @@ class SDFCommander(object):
         self.reset_flag = False  # flag to reset values for the sdf volume
         self.valid_flag = False  # flag to specify if it is valid to response to the request
 
+        self.pose_lock = threading.Lock()
+        self.sdf_lock = threading.Lock()
+
     def callback_t_base2ee(self, msg):
         ee_pose = np.asarray(msg.pose).reshape((4, 4), order='F').astype(np.float32)
+        self.pose_lock.acquire()
         self.t_base2ee = Pose(ee_pose)
+        self.pose_lock.release()
 
     def callback_enable(self, msg):
         """
@@ -89,13 +99,38 @@ class SDFCommander(object):
         self.reset_flag = msg.data
         rospy.loginfo("flag received, re-initialize tsdf")
 
+    def tsdf_integrate(self, depth, intrinsic, m_base2cam, rgb):
+        self.sdf_lock.acquire()
+        self.tsdf.integrate(depth, intrinsic, m_base2cam, rgb=rgb)
+        self.sdf_lock.release()
+
+    def reset(self):
+        self.sdf_lock.acquire()
+        self.tsdf.reset()
+        self.sdf_lock.release()
+        self.reset_flag = False
+        self.valid_flag = False
+
+    def save_mesh(self, name='out.ply'):
+        if self.valid_flag:
+            self.sdf_lock.acquire()
+            v, f, n, rgb = self.tsdf.compute_mesh()
+            self.sdf_lock.release()
+            self.tsdf.write_mesh(name, v, f, n, rgb)
+        else:
+            rospy.logwarn('no visual data is merged into the volume currently, '
+                          'no mesh will be saved at this moment.')
+        self.save_flag = False
+
     def handle_send_tsdf_volume(self, req):
         while not self.valid_flag:
             rospy.sleep(0.01)
+        self.sdf_lock.acquire()
         if req.post_processed:
             sdf_volume = self.tsdf.post_processed_volume
         else:
             sdf_volume = self.tsdf.sdf_volume
+        self.sdf_lock.release()
         if req.gaussian_blur:
             sdf_volume = self.tsdf.gaussian_blur(sdf_volume)
         sdf_volume = sdf_volume.cpu().numpy()
@@ -106,15 +141,24 @@ class SDFCommander(object):
 
     def callback_pcl(self, msg):
         while not self.valid_flag:
-            rospy.loginfo('wait for visual data ...')
+            rospy.loginfo('nothing in the volume ...')
             rospy.sleep(0.1)
             return
         if msg.data:
-            xyz_rgb = self.tsdf.compute_pcl(use_post_processed=False, gaussian_blur=False)
+            # self.sdf_lock.acquire()
+            xyz_rgb = self.tsdf.compute_pcl(use_post_processed=True, gaussian_blur=True)
+            # self.sdf_lock.release()
             xyz_rgb = xyz_rgb.cpu().numpy()
             pcl2msg = self.array_to_pointcloud2(xyz_rgb)
             self.pcl_pub.publish(pcl2msg)
         rospy.sleep(0.1)
+
+    @property
+    def m_base2ee(self):
+        self.pose_lock.acquire()
+        m_base2ee = copy.deepcopy(self.t_base2ee())  # current pose from ee to base
+        self.pose_lock.release()
+        return m_base2ee
 
     @staticmethod
     def array_to_pointcloud2(pcl):
@@ -211,3 +255,151 @@ class CPNCommander(object):
     def volume_msg2numpy(msg):
         volume = np.array(msg.data).reshape((msg.height, msg.width, msg.depth))
         return volume.astype(np.float32)
+
+
+class PandaGripperPoseParser(object):
+    def __init__(self, topic_name):
+        _ = rospy.Subscriber(topic_name, GripperPose, self.callback)
+        self._pos, self._quat, self._width = None, None, 0.08
+        self._lock = threading.Lock()
+
+    def callback(self, msg):
+        pos, quat, width = self.msg2pose(msg)
+        self._lock.acquire()
+        self._pos, self._quat, self._width = pos, quat, width
+        self._lock.release()
+
+    def get(self):
+        self._lock.acquire()
+        pos, quat, width = copy.deepcopy(self._pos), copy.deepcopy(self._quat), self._width
+        self._lock.acquire()
+        return pos, quat, width
+
+    def reset(self):
+        self._lock.acquire()
+        self._pos, self._quat, self._width = None, None, 0.08
+        self._lock.acquire()
+
+    @staticmethod
+    def msg2pose(msg):
+        """
+        Convert GripperPose message to ee pose of panda
+        :param msg: GripperPose.msg
+        :return: A 4x4-d numpy array representing the pose of the end effector.
+        """
+        cp1 = np.array([msg.cp1.x, msg.cp1.y, msg.cp1.z])
+        cp2 = np.array([msg.cp2.x, msg.cp2.y, msg.cp2.z])
+        pos = (cp1 + cp2) / 2
+        # for panda robot, the grasp vector lies on x-axis
+        z = np.array([msg.av.x, msg.av.y, msg.av.z])
+        x = np.array([msg.gv.x, msg.gv.y, msg.gv.z])
+        y = np.cross(z, x)
+        rot = np.stack([x, y, z], axis=1)
+        quat = quaternion.from_rotation_matrix(rot)
+        return pos, quat, msg.width
+
+
+class PandaCommander(object):
+    def __init__(self, robot, arm_speed=0.05, rate=100):
+        self.robot = robot
+        self.robot.set_arm_speed(arm_speed)
+        self.gripper = robot.get_gripper()
+        self.lock = threading.Lock()
+        self.v_limits = np.array(self.robot.get_joint_limits().velocity)
+        self.err_rec_pub = rospy.Publisher('/franka_ros_interface/franka_control/error_recovery/goal',
+                                           ErrorRecoveryActionGoal,
+                                           queue_size=1)
+        self.rate = rate
+        self.arm_speed = arm_speed
+        self.zero_vel = np.zeros(7, dtype=np.float64).tolist()
+
+    def set_gripper_width(self, width, wait=False):
+        width = max(0.0, min(0.08, width))
+        self.gripper.move_joints(width, wait_for_result=wait)
+
+    def open_gripper(self):
+        self.set_gripper_width(0.08)
+
+    def close_gripper(self):
+        self.set_gripper_width(0.0)
+
+    def ee_pose(self):
+        return self.robot.ee_pose()
+
+    def jnt_vals(self):
+        return self.robot.angles()
+
+    def movej(self, jnt_vals, unit='r'):
+        jnt_vals = np.asarray(jnt_vals)
+        if unit == 'd':
+            jnt_vals = np.deg2rad(jnt_vals)
+        self.robot.move_to_joint_position(jnt_vals)
+
+    def movel(self, pos, quat):
+        self.robot.move_to_cartesian_pose(pos, quat)
+
+    def fk(self, jnt_vals, unit='r'):
+        jnt_vals = np.asarray(jnt_vals)
+        if unit == 'd':
+            jnt_vals = np.deg2rad(jnt_vals)
+        pos, quat = self.robot.forward_kinematics(jnt_vals)
+        return pos, quat
+
+    def ik(self, pos, quat):
+        jnt_vals = self.robot.inverse_kinematics(pos, quat)
+        return jnt_vals
+
+    def zeroize_vel(self, th=1e-3):
+        vel_norm = np.linalg.norm(np.array(list(self.robot.joint_velocities().values())[:]))
+        i = 0
+        while vel_norm > th:
+            self.robot.exec_velocity_cmd(self.zero_vel)
+            rospy.sleep(1 / self.rate)
+            i += 1
+        rospy.loginfo('stop joint velocity controller with {} zero vel cmd(s)'.format(i))
+
+    def vel_ctl(self, pos, quat, min_height=0.47):
+        b = time.time()
+        if pos is None:
+            rospy.loginfo('no valid pose detected')
+            self.robot.exec_velocity_cmd(self.zero_vel)
+            rospy.sleep(1 / self.rate)
+            return
+        rospy.loginfo('target position of T_base2ee: {}'.format(pos))
+        curr_pos, curr_quat = self.robot.ee_pose()
+        pos_res = pos - curr_pos
+        direction = pos_res / np.linalg.norm(pos_res)
+        quat_res = quaternion.as_float_array(quat * curr_quat.conj())
+        ori_res = np.sign(quat_res[0]) * quat_res[1:]
+        # since we stop at the desired height rather than the target pose,
+        # we use signed gain here to let end-effector keep stable at desired height location
+        pos_gain = curr_pos[2] - min_height
+        pos_gain = np.sign(pos_gain) * min(np.abs(pos_gain), self.arm_speed)  # truncated gain
+        ori_gain = min(np.linalg.norm(quat_res[1:]), self.arm_speed)
+        pos_gain_vec = np.ones(3) * pos_gain
+        pos_gain_vec[0:2] *= 8  # amplify gain in x and y direction
+        next_vel = np.concatenate([pos_gain_vec * direction, ori_gain * ori_res], axis=0)
+        jacobian = self.robot.jacobian()
+        jacobian_pseudo_inverse = np.linalg.pinv(jacobian)
+        next_jnt_vel = np.dot(jacobian_pseudo_inverse, next_vel)
+        e = time.time()
+        rospy.loginfo('estimated rate for computing vel cmd: {}Hz'.format((1/(e-b))))
+        self.robot.exec_velocity_cmd(next_jnt_vel)
+        rospy.sleep(max(1/self.rate-(e-b), 0))
+
+    # https://github.com/justagist/franka_ros_interface/blob/master/franka_common/franka_core_msgs/msg/RobotState.msg
+    def robot_state_callback(self, msg):
+        for name in dir(msg.current_errors):
+            if name[0] != '_' and 'serialize' not in name:
+                if getattr(msg.current_errors, name):
+                    self.recover_from_errors()
+                    return
+        if msg.robot_mode == 4:
+            self.recover_from_errors()
+            return
+        rospy.sleep(0.01)
+
+    def recover_from_errors(self):
+        rospy.loginfo('call the error reset action server')
+        self.err_rec_pub.publish(ErrorRecoveryActionGoal())
+        rospy.sleep(3.0)

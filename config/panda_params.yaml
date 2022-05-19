@@ -1,0 +1,13 @@
+init_joint_pos:
+  - 0.0
+  - 0.0
+  - 0.0
+  - -60.0
+  - 0.0
+  - 60.0
+  - 45.0
+
+arm_speed: 0.05
+vel_rate: 100
+min_height: 0.37
+ee_offset: 0.17  # distance between the target grasp pose and the pre-grasp pose
