@@ -101,10 +101,9 @@ class SDF(object):
         self.sdf_vol[valid_x, valid_y, valid_z] = sdf_new
         if self.rgb and rgb is not None:
             rgb_old = self.decode_rgb(self.rgb_vol[valid_x, valid_y, valid_z])
-            rgb = torch.tensor(rgb, self.dtype, self.dev) if isinstance(rgb, np.ndarray) else rgb.clone().to(
-                self.dtype).to(self.dev)
+            rgb = torch.from_numpy(rgb).to(self.dtype).to(self.dev) if isinstance(rgb, np.ndarray) else rgb.clone().to(self.dtype).to(self.dev)
             valid_ids = torch.round(valid_ids).long()
-            valid_color = rgb[valid_ids[:, 0], valid_ids[:, 1]]
+            valid_color = rgb[valid_ids[:, 0], valid_ids[:, 1]][depth_flag]
             rgb_new = (w_old.unsqueeze(dim=1) * rgb_old + w_curr.unsqueeze(dim=1) * valid_color) / w_new.unsqueeze(
                 dim=1)
             rgb_new = torch.clamp_max(rgb_new, 255)
