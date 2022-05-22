@@ -36,9 +36,9 @@ class SDF(object):
         self.sdf_vol = torch.ones(self.vol_dims.tolist(), dtype=self.dtype, device=device)
         # assign a small value to avoid zero division
         self.w_vol = torch.ones_like(self.sdf_vol, dtype=self.dtype, device=device) * 1e-7
-        # record if the voxel has been scan at least once
-        self.pos_vol = torch.zeros_like(self.sdf_vol, dtype=torch.bool, device=device)  # positive-value voxels
-        self.view_vol = torch.zeros_like(self.sdf_vol, dtype=torch.bool, device=device)  # voxels that are inside the view frustum
+        # create auxiliary volumes
+        self.aux_sdf = torch.ones(self.vol_dims.tolist(), dtype=self.dtype, device=device)
+        self.aux_w = torch.ones_like(self.sdf_vol, dtype=self.dtype, device=device) * 1e-7
         if self.rgb:
             self.rgb_vol = torch.ones_like(self.sdf_vol, dtype=self.dtype, device=device)
             self.rgb_vol = self.rgb_vol * (255 * 256 ** 2 + 255 * 256 + 255)
@@ -55,7 +55,7 @@ class SDF(object):
         self.sdf_info()
         self.ip = ImageProcessor()
 
-    def integrate(self, depth, intrinsic, camera_pose, fd='point2point', fw='etw', rgb=None):
+    def integrate(self, depth, intrinsic, camera_pose, fd='point2point', fw='cw', rgb=None):
         """
         Integrate RGB-D frame into SDF volume (naive SDF)
         :param depth: An HxW numpy array representing a depth map
@@ -84,28 +84,28 @@ class SDF(object):
         valid_pos = voxel_pos_c[voxel_flag]
         distance, depth_flag = self.__getattribute__(fd)(depth, valid_ids, valid_pos, intrinsic)
         pos_flag = distance >= 0
-        view_x, view_y, view_z = self.voxel_ids[voxel_flag][depth_flag].unbind(dim=-1)
-        self.view_vol[view_x, view_y, view_z] = True
-        pos_x, pos_y, pos_z = self.voxel_ids[voxel_flag][depth_flag][pos_flag].unbind(dim=-1)
-        self.pos_vol[pos_x, pos_y, pos_z] = True
         # self.neg_vol[voxel_flag][depth_flag] = distance < 0
         valid_x, valid_y, valid_z = self.voxel_ids[voxel_flag][depth_flag].unbind(dim=-1)
         # update sdf volume with given weighting function
         w_old = self.w_vol[valid_x, valid_y, valid_z]
         sdf_old = self.sdf_vol[valid_x, valid_y, valid_z]
-        w_curr = self.__getattribute__(fw)(distance)
+        w_curr = torch.ones_like(sdf_old, dtype=self.dtype, device=self.dev)
         w_new = w_old + w_curr
-        sdf_new = (w_old * sdf_old + w_curr * distance) / w_new
-        w_new = torch.clamp_max(w_new, self.max_w)
-        self.w_vol[valid_x, valid_y, valid_z] = w_new
-        self.sdf_vol[valid_x, valid_y, valid_z] = sdf_new
+        self.aux_sdf[valid_x, valid_y, valid_z] = (w_old * sdf_old + w_curr * distance) / w_new
+        self.aux_w[valid_x, valid_y, valid_z] = torch.clamp_max(w_new, self.max_w)
+        w_curr = self.__getattribute__(fw)(distance, eps=-0.7)
+        w_new = w_old + w_curr
+        self.sdf_vol[valid_x, valid_y, valid_z] = (w_old * sdf_old + w_curr * distance) / w_new
+        self.w_vol[valid_x, valid_y, valid_z] = torch.clamp_max(w_new, self.max_w)
+
         if self.rgb and rgb is not None:
-            rgb_old = self.decode_rgb(self.rgb_vol[valid_x, valid_y, valid_z])
+            # rgb_old = self.decode_rgb(self.rgb_vol[valid_x, valid_y, valid_z])
             rgb = torch.from_numpy(rgb).to(self.dtype).to(self.dev) if isinstance(rgb, np.ndarray) else rgb.clone().to(self.dtype).to(self.dev)
             valid_ids = torch.round(valid_ids).long()
             valid_color = rgb[valid_ids[:, 0], valid_ids[:, 1]][depth_flag]
-            rgb_new = (w_old.unsqueeze(dim=1) * rgb_old + w_curr.unsqueeze(dim=1) * valid_color) / w_new.unsqueeze(
-                dim=1)
+            rgb_new = valid_color
+            # rgb_new = (w_old.unsqueeze(dim=1) * rgb_old + w_curr.unsqueeze(dim=1) * valid_color) / w_new.unsqueeze(
+            #     dim=1)
             rgb_new = torch.clamp_max(rgb_new, 255)
             self.rgb_vol[valid_x, valid_y, valid_z] = self.encode_rgb(rgb_new)
 
@@ -136,8 +136,8 @@ class SDF(object):
     def reset(self):
         self.sdf_vol = torch.ones_like(self.sdf_vol, dtype=self.dtype, device=self.dev)
         self.w_vol = torch.ones_like(self.sdf_vol, dtype=self.dtype, device=self.dev) * 1e-7
-        self.pos_vol = torch.zeros_like(self.sdf_vol, dtype=torch.bool, device=self.dev)
-        self.view_vol = torch.zeros_like(self.sdf_vol, dtype=torch.bool, device=self.dev)
+        self.aux_sdf = torch.ones(self.vol_dims.tolist(), dtype=self.dtype, device=self.dev)
+        self.aux_w = torch.ones_like(self.sdf_vol, dtype=self.dtype, device=self.dev) * 1e-7
         if self.rgb:
             self.rgb_vol = torch.ones_like(self.sdf_vol, dtype=self.dtype, device=self.dev)
             self.rgb_vol = self.rgb_vol * (255 * 256 ** 2 + 255 * 256 + 255)
@@ -154,14 +154,15 @@ class SDF(object):
         return self.sdf_vol.shape
 
     @staticmethod
-    def cw(distance):
+    def cw(distance, eps=-1.0):
         """
         constant weight
         :param distance:
+        :param eps:
         :return:
         """
         w = torch.zeros_like(distance)
-        flag = distance <= 1
+        flag = distance >= eps
         w[flag] = 1
         return w
 
@@ -236,9 +237,8 @@ class SDF(object):
         # if the initial view frustum includes the entire volume space,
         # we can use weight volume to find occupied space
         sdf_vol = self.sdf_vol.clone()
-        in_obj_ids = torch.logical_and(self.view_vol,
-                                       torch.logical_and(torch.logical_not(self.pos_vol),
-                                                         self.sdf_vol == 1))
+        in_obj_ids = torch.logical_and(self.w_vol == 1e-7,
+                                       self.aux_sdf < 0)
         sdf_vol[in_obj_ids] = -1.0
         return sdf_vol
 
@@ -502,7 +502,7 @@ class TSDF(object):
         Integrate RGB-D frame into SDF volume
         :param depth: An HxW numpy array representing a depth map
         :param intrinsic: A 3x3 numpy array representing the camera intrinsic matrix
-        :param camera_pose: A 4x4 numpy array representing the transformation from camera to reference frame (world)
+        :param camera_pose: A 4x4 numpy array representing the transformation from reference frame (world) to camera
         :param rgb: (Optional) An HxWx3 numpy array representing a color image
         :return: None
         """
