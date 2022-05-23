@@ -216,7 +216,7 @@ if __name__ == '__main__':
                         type=str,
                         help='id of nvidia device.')
     parser.add_argument('--seed',
-                        default=777,
+                        default=177,
                         type=int,
                         help='random seed for torch and numpy random number generator.')
     main(parser.parse_args())

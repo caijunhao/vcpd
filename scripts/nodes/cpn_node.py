@@ -32,7 +32,7 @@ def cpn_node():
     ms = ml.MeshSet()
     vertex_sets = dict()
     for component in ['hand', 'left_finger', 'right_finger']:
-        col2_path = os.path.join('assets', component + '_col2.obj')
+        col2_path = os.path.join(cfg('asset_path'), component + '_col2.obj')
         ms.load_new_mesh(col2_path)
         vertex_sets[component] = ms.current_mesh().vertex_matrix()
     vc = CPNCommander(vol_bnd, vl, model, vertex_sets, gripper_depth=cfg('gripper_depth'), device=device)

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from sdf import SDF
-from ros_utils import SDFCommander, Pose
+from ros_utils import SDFCommander, Transform
 from ros_utils import from_rs_intr_to_mat
 from vcpd.srv import RequestVolume
 from vcpd.msg import EEPose
@@ -9,10 +9,8 @@ from std_msgs.msg import Bool
 import pyrealsense2 as rs
 import numpy as np
 import torch
-import threading
 import rospy
 import time
-import copy
 cfg = rospy.get_param
 
 
@@ -32,6 +30,8 @@ def tsdf_node():
     config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, cfg('fps'))
     config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, cfg('fps'))
     profile = pipeline.start(config)
+    # depth_sensor = profile.get_device().first_depth_sensor()
+    # depth_sensor.set_option(rs.option.visual_preset, 3)  # 3: High Accuracy
     depth_profile = rs.video_stream_profile(profile.get_stream(rs.stream.depth))
     color_profile = rs.video_stream_profile(profile.get_stream(rs.stream.color))
     if cfg('aligned'):
@@ -52,9 +52,9 @@ def tsdf_node():
 
     # get transformation from end-effector to camera from rosparam
     if cfg('aligned'):
-        t_ee2cam = Pose(rospy.get_param('p_ee2cam_aligned'))
+        t_ee2cam = Transform(rospy.get_param('p_ee2cam_aligned'))
     else:
-        t_ee2cam = Pose(rospy.get_param('p_ee2cam'))
+        t_ee2cam = Transform(rospy.get_param('p_ee2cam'))
     # tsdf initialization
     vl = cfg('voxel_length')
     c_y = cfg('c_y_aligned') if cfg('aligned') else cfg('c_y')
@@ -109,7 +109,7 @@ def tsdf_node():
         if sc.reset_flag:
             sc.reset()
         if sc.save_flag:
-            sc.save_mesh('out.ply')
+            sc.save_mesh('/home/jcaiaq/out.ply')
 
 
 if __name__ == '__main__':

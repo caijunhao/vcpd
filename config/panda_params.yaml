@@ -10,4 +10,6 @@ init_joint_pos:
 arm_speed: 0.05
 vel_rate: 100
 min_height: 0.37
-ee_offset: 0.17  # distance between the target grasp pose and the pre-grasp pose
+ee_offset: 0.1  # distance between the target grasp pose and the pre-grasp pose
+ori_ctl: true
+robot_state: /franka_ros_interface/custom_franka_state_controller/robot_state

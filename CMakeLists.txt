@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.0.2)
 project(vcpd)
 
 ## Compile as C++11, supported in ROS Kinetic and newer
-# add_compile_options(-std=c++11)
+ add_compile_options(-std=c++11)
 
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
@@ -60,7 +60,8 @@ find_package(catkin REQUIRED COMPONENTS
 ## Generate services in the 'srv' folder
  add_service_files(
    FILES
-   RequestVolume.srv
+         RequestGripperPose.srv
+         RequestVolume.srv
  )
 
 ## Generate actions in the 'action' folder
@@ -109,8 +110,8 @@ find_package(catkin REQUIRED COMPONENTS
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
   INCLUDE_DIRS
-#  LIBRARIES vpn_grasping
-#  CATKIN_DEPENDS geometry_msgs message_generation roscpp rospy sensor_msgs std_msgs tf2_geometry_msgs
+#  LIBRARIES vcpd
+#  CATKIN_DEPENDS geometry_msgs roscpp rospy sensor_msgs std_msgs tf2_geometry_msgs
 )
 
 ###########
@@ -120,7 +121,6 @@ catkin_package(
 ## Specify additional locations of header files
 ## Your package locations should be listed before other locations
 include_directories(
-# include
   ${catkin_INCLUDE_DIRS}
   ${PROJECT_SOURCE_DIR}/include
 )

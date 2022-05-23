@@ -1,0 +1,5 @@
+<?xml version="1.0"?>
+<launch>
+    <node pkg="vcpd" name="panda_node" type="panda_node.py" output="screen" />
+        <rosparam command="load" file="$(find vcpd)/config/panda_params.yaml" />
+</launch>

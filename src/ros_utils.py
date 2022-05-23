@@ -1,11 +1,11 @@
-from vcpd.srv import RequestVolume, RequestVolumeRequest, RequestVolumeResponse
+from vcpd.srv import RequestVolume, RequestVolumeRequest, RequestVolumeResponse, RequestGripperPose, RequestGripperPoseResponse
 from vcpd.msg import Volume, GripperPose
 from franka_msgs.msg import ErrorRecoveryActionGoal
 from cpn.utils import sample_contact_points, select_gripper_pose, clustering
 from sdf import SDF
 from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import PointCloud2, PointField
-from std_msgs.msg import Bool, String
+from geometry_msgs.msg import Pose
 import quaternion
 import numpy as np
 import torch
@@ -22,7 +22,7 @@ def from_rs_intr_to_mat(rs_intrinsics):
     return intrinsic
 
 
-class Pose(object):
+class Transform(object):
     def __init__(self, array):
         array = np.asanyarray(array)
         dtype = array.dtype
@@ -72,7 +72,7 @@ class SDFCommander(object):
     def callback_t_base2ee(self, msg):
         ee_pose = np.asarray(msg.pose).reshape((4, 4), order='F').astype(np.float32)
         self.pose_lock.acquire()
-        self.t_base2ee = Pose(ee_pose)
+        self.t_base2ee = Transform(ee_pose)
         self.pose_lock.release()
 
     def callback_enable(self, msg):
@@ -107,14 +107,14 @@ class SDFCommander(object):
     def reset(self):
         self.sdf_lock.acquire()
         self.tsdf.reset()
-        self.sdf_lock.release()
         self.reset_flag = False
         self.valid_flag = False
+        self.sdf_lock.release()
 
     def save_mesh(self, name='out.ply'):
         if self.valid_flag:
             self.sdf_lock.acquire()
-            v, f, n, rgb = self.tsdf.compute_mesh()
+            v, f, n, rgb = self.tsdf.compute_mesh(step_size=2)
             self.sdf_lock.release()
             self.tsdf.write_mesh(name, v, f, n, rgb)
         else:
@@ -214,7 +214,7 @@ class CPNCommander(object):
         else:
             rospy.loginfo('pause cpn node')
 
-    def request_a_volume(self, post_processed=True, gaussian_blur=True, service_name='request_volume'):
+    def request_a_volume(self, post_processed=True, gaussian_blur=True, service_name='request_a_volume'):
         rospy.wait_for_service(service_name)
         try:
             handle_receive_sdf_volume = rospy.ServiceProxy(service_name,
@@ -231,7 +231,11 @@ class CPNCommander(object):
     def inference(self):
         sdf_volume = self.request_a_volume()
         self.tsdf.sdf_vol = torch.from_numpy(sdf_volume).to(self.device)
-        cp1, cp2 = sample_contact_points(self.tsdf, post_processed=False, gaussian_blur=False)
+        try:
+            cp1, cp2 = sample_contact_points(self.tsdf, post_processed=False, gaussian_blur=False)
+        except ValueError:
+            rospy.logwarn('cannot find level set from the volume, try next one')
+            return None
         ids_cp1, ids_cp2 = self.tsdf.get_ids(cp1), self.tsdf.get_ids(cp2)
         sample = dict()
         sample['sdf_volume'] = self.tsdf.sdf_vol.unsqueeze(dim=0).unsqueeze(dim=0)
@@ -260,6 +264,7 @@ class CPNCommander(object):
 class PandaGripperPoseParser(object):
     def __init__(self, topic_name):
         _ = rospy.Subscriber(topic_name, GripperPose, self.callback)
+        s = rospy.Service('request_panda_gripper_pose', RequestGripperPose, self.handle_send_gripper_pose)
         self._pos, self._quat, self._width = None, None, 0.08
         self._lock = threading.Lock()
 
@@ -272,13 +277,26 @@ class PandaGripperPoseParser(object):
     def get(self):
         self._lock.acquire()
         pos, quat, width = copy.deepcopy(self._pos), copy.deepcopy(self._quat), self._width
-        self._lock.acquire()
+        self._lock.release()
         return pos, quat, width
 
     def reset(self):
         self._lock.acquire()
         self._pos, self._quat, self._width = None, None, 0.08
-        self._lock.acquire()
+        self._lock.release()
+
+    def handle_send_gripper_pose(self, req):
+        msg = Pose()
+        if self._pos is None:
+            msg.position.x, msg.position.y, msg.position.z = 0, 0, 0
+            msg.orientation.w, msg.orientation.x, msg.orientation.y, msg.orientation.z = 1, 0, 0, 0
+        else:
+            msg.position.x, msg.position.y, msg.position.z = self._pos.tolist()
+            msg.orientation.w = self._quat.w
+            msg.orientation.x = self._quat.x
+            msg.orientation.y = self._quat.y
+            msg.orientation.z = self._quat.z
+        return RequestGripperPoseResponse(msg)
 
     @staticmethod
     def msg2pose(msg):
@@ -292,7 +310,9 @@ class PandaGripperPoseParser(object):
         pos = (cp1 + cp2) / 2
         # for panda robot, the grasp vector lies on x-axis
         z = np.array([msg.av.x, msg.av.y, msg.av.z])
-        x = np.array([msg.gv.x, msg.gv.y, msg.gv.z])
+        y = np.array([msg.gv.x, msg.gv.y, msg.gv.z])
+        x = np.cross(y, z)
+        x = x if x[0] > 0 else -x
         y = np.cross(z, x)
         rot = np.stack([x, y, z], axis=1)
         quat = quaternion.from_rotation_matrix(rot)
@@ -302,7 +322,7 @@ class PandaGripperPoseParser(object):
 class PandaCommander(object):
     def __init__(self, robot, arm_speed=0.05, rate=100):
         self.robot = robot
-        self.robot.set_arm_speed(arm_speed)
+        # self.robot.set_arm_speed(arm_speed)
         self.gripper = robot.get_gripper()
         self.lock = threading.Lock()
         self.v_limits = np.array(self.robot.get_joint_limits().velocity)
@@ -318,7 +338,7 @@ class PandaCommander(object):
         self.gripper.move_joints(width, wait_for_result=wait)
 
     def open_gripper(self):
-        self.set_gripper_width(0.08)
+        self.gripper.grasp(0.085, 0, 0.05)
 
     def close_gripper(self):
         self.set_gripper_width(0.0)
@@ -355,10 +375,11 @@ class PandaCommander(object):
         while vel_norm > th:
             self.robot.exec_velocity_cmd(self.zero_vel)
             rospy.sleep(1 / self.rate)
+            vel_norm = np.linalg.norm(np.array(list(self.robot.joint_velocities().values())[:]))
             i += 1
         rospy.loginfo('stop joint velocity controller with {} zero vel cmd(s)'.format(i))
 
-    def vel_ctl(self, pos, quat, min_height=0.47):
+    def vel_ctl(self, pos, quat, min_height, ori_ctl=False):
         b = time.time()
         if pos is None:
             rospy.loginfo('no valid pose detected')
@@ -375,9 +396,9 @@ class PandaCommander(object):
         # we use signed gain here to let end-effector keep stable at desired height location
         pos_gain = curr_pos[2] - min_height
         pos_gain = np.sign(pos_gain) * min(np.abs(pos_gain), self.arm_speed)  # truncated gain
-        ori_gain = min(np.linalg.norm(quat_res[1:]), self.arm_speed)
+        ori_gain = np.linalg.norm(ori_res) if ori_ctl else 0
         pos_gain_vec = np.ones(3) * pos_gain
-        pos_gain_vec[0:2] *= 8  # amplify gain in x and y direction
+        # pos_gain_vec[0:2] *= 8  # amplify gain in x and y direction
         next_vel = np.concatenate([pos_gain_vec * direction, ori_gain * ori_res], axis=0)
         jacobian = self.robot.jacobian()
         jacobian_pseudo_inverse = np.linalg.pinv(jacobian)
