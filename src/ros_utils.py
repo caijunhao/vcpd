@@ -332,6 +332,11 @@ class PandaCommander(object):
         self.rate = rate
         self.arm_speed = arm_speed
         self.zero_vel = np.zeros(7, dtype=np.float64).tolist()
+        self.error = False
+
+    def detect_grasp(self):
+        pos = self.gripper.joint_positions()
+        return pos['panda_finger_joint1'] > 0.001 and pos['panda_finger_joint2'] > 0.001
 
     def set_gripper_width(self, width, wait=False):
         width = max(0.0, min(0.08, width))
@@ -345,6 +350,9 @@ class PandaCommander(object):
 
     def ee_pose(self):
         return self.robot.ee_pose()
+
+    def angles(self):
+        return self.robot.angles()
 
     def jnt_vals(self):
         return self.robot.angles()
@@ -379,7 +387,7 @@ class PandaCommander(object):
             i += 1
         rospy.loginfo('stop joint velocity controller with {} zero vel cmd(s)'.format(i))
 
-    def vel_ctl(self, pos, quat, min_height, ori_ctl=False):
+    def vel_ctl(self, pos, quat, min_height=None, ori_ctl=False):
         b = time.time()
         if pos is None:
             rospy.loginfo('no valid pose detected')
@@ -389,15 +397,20 @@ class PandaCommander(object):
         rospy.loginfo('target position of T_base2ee: {}'.format(pos))
         curr_pos, curr_quat = self.robot.ee_pose()
         pos_res = pos - curr_pos
-        direction = pos_res / np.linalg.norm(pos_res)
+        norm = np.linalg.norm(pos_res)
+        direction = pos_res / norm
         quat_res = quaternion.as_float_array(quat * curr_quat.conj())
         ori_res = np.sign(quat_res[0]) * quat_res[1:]
         # since we stop at the desired height rather than the target pose,
         # we use signed gain here to let end-effector keep stable at desired height location
-        pos_gain = curr_pos[2] - min_height
-        pos_gain = np.sign(pos_gain) * min(np.abs(pos_gain), self.arm_speed)  # truncated gain
-        ori_gain = np.linalg.norm(ori_res) if ori_ctl else 0
-        pos_gain_vec = np.ones(3) * pos_gain
+        if min_height is None:
+            pos_gain = min(norm, self.arm_speed)
+            pos_gain_vec = pos_gain
+        else:
+            pos_gain = curr_pos[2] - min_height
+            pos_gain = min(np.abs(pos_gain), self.arm_speed)  # truncated gain ?? np.sign(pos_gain) *
+            pos_gain_vec = np.ones(3) * pos_gain
+        ori_gain = 1 if ori_ctl else 0
         # pos_gain_vec[0:2] *= 8  # amplify gain in x and y direction
         next_vel = np.concatenate([pos_gain_vec * direction, ori_gain * ori_res], axis=0)
         jacobian = self.robot.jacobian()
@@ -422,5 +435,7 @@ class PandaCommander(object):
 
     def recover_from_errors(self):
         rospy.loginfo('call the error reset action server')
+        self.error = True
         self.err_rec_pub.publish(ErrorRecoveryActionGoal())
         rospy.sleep(3.0)
+        self.error = False
