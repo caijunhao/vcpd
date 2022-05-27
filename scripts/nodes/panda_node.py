@@ -69,7 +69,7 @@ def panda_node():
         rospy.sleep(0.5)
         diff_height = np.abs(pos[2] - pc.ee_pose()[0][2])
         while diff_height > 0.005 and not pc.error:
-            pc.vel_ctl(pos, quat, min_height=pos[2], ori_ctl=False, amp=1)
+            pc.vel_ctl(pos, quat, min_height=pos[2], ori_ctl=False, gain_h=1)
             curr_pos = pc.ee_pose()[0]
             diff_height = np.abs(pos[2] - curr_pos[2])
         pc.zeroize_vel()
