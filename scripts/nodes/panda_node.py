@@ -18,7 +18,7 @@ def panda_node():
     bottom = center.copy()
     bottom[2] -= cfg('sdf_d') / 2 * cfg('voxel_length')
     pgpp = PandaGripperPoseParser('/cpn/gripper_pose')
-    pc.movej(cfg('init_joint_pos'), unit='d')
+    pc.movej(cfg('jnt_vals'))
     pc.gripper.grasp(0.085, 0, 0.05)
     drop_pos = [-1.5427169, -0.70545206, 1.95252443, -1.28864723, 0.64465563, 1.59058326, 1.28369785]
     tsdf_enable_pub = rospy.Publisher('/tsdf/enable', Bool, queue_size=1)
@@ -69,7 +69,7 @@ def panda_node():
         rospy.sleep(0.5)
         diff_height = np.abs(pos[2] - pc.ee_pose()[0][2])
         while diff_height > 0.005 and not pc.error:
-            pc.vel_ctl(pos, quat, min_height=pos[2], ori_ctl=False)
+            pc.vel_ctl(pos, quat, min_height=pos[2], ori_ctl=False, amp=1)
             curr_pos = pc.ee_pose()[0]
             diff_height = np.abs(pos[2] - curr_pos[2])
         pc.zeroize_vel()
@@ -80,7 +80,7 @@ def panda_node():
         if pc.detect_grasp():
             pc.movej(drop_pos)
         pc.open_gripper()
-        pc.movej(cfg('init_joint_pos'), unit='d')
+        pc.movej(cfg('jnt_vals'))
         rospy.sleep(0.5)
 
 

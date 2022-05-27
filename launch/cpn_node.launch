@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <launch>
-    <node pkg="vcpd" name="cpn_node" type="cpn_node.py" output="screen" />
+    <node pkg="vcpd" name="cpn_node" type="cpn_node.py" output="screen" respawn="true"/>
         <rosparam command="load" file="$(find vcpd)/config/tsdf_params.yaml" />
         <rosparam command="load" file="$(find vcpd)/config/rs_params.yaml" />
         <rosparam command="load" file="$(find vcpd)/config/cpn_params.yaml" />

@@ -236,17 +236,28 @@ class CPNCommander(object):
         except ValueError:
             rospy.logwarn('cannot find level set from the volume, try next one')
             return None
+        if cp1.shape[0] == 0:
+            rospy.logwarn('cannot find potential contact points')
+            return None
         ids_cp1, ids_cp2 = self.tsdf.get_ids(cp1), self.tsdf.get_ids(cp2)
         sample = dict()
         sample['sdf_volume'] = self.tsdf.sdf_vol.unsqueeze(dim=0).unsqueeze(dim=0)
         sample['ids_cp1'] = ids_cp1.permute((1, 0)).unsqueeze(dim=0).unsqueeze(dim=-1)
         sample['ids_cp2'] = ids_cp2.permute((1, 0)).unsqueeze(dim=0).unsqueeze(dim=-1)
         out = torch.squeeze(self.cpn.forward(sample))
+        if out.shape[0] == 0:
+            rospy.logwarn('output size is zero')
+            return None
         gripper_pos, rot, width, cp1, cp2 = select_gripper_pose(self.tsdf, self.gpr_pts,
                                                                 out, cp1, cp2, self.gpr_d,
                                                                 check_tray=False,
                                                                 post_processed=False, gaussian_blur=False)
         gripper_pos, rot, width, cp1, cp2 = clustering(gripper_pos, rot, width, cp1, cp2)
+        msg = self.pose2msg(cp1, cp2, rot, width)
+        return msg
+
+    @staticmethod
+    def pose2msg(cp1, cp2, rot, width):
         msg = GripperPose()
         msg.cp1.x, msg.cp1.y, msg.cp1.z = cp1.tolist()
         msg.cp2.x, msg.cp2.y, msg.cp2.z = cp2.tolist()
@@ -387,7 +398,7 @@ class PandaCommander(object):
             i += 1
         rospy.loginfo('stop joint velocity controller with {} zero vel cmd(s)'.format(i))
 
-    def vel_ctl(self, pos, quat, min_height=None, ori_ctl=False):
+    def vel_ctl(self, pos, quat, min_height=None, ori_ctl=False, gain_h=8):
         b = time.time()
         if pos is None:
             rospy.loginfo('no valid pose detected')
@@ -410,8 +421,8 @@ class PandaCommander(object):
             pos_gain = curr_pos[2] - min_height
             pos_gain = min(np.abs(pos_gain), self.arm_speed)  # truncated gain ?? np.sign(pos_gain) *
             pos_gain_vec = np.ones(3) * pos_gain
+            pos_gain_vec[0:2] *= gain_h  # amplify gain in x and y direction
         ori_gain = 1 if ori_ctl else 0
-        # pos_gain_vec[0:2] *= 8  # amplify gain in x and y direction
         next_vel = np.concatenate([pos_gain_vec * direction, ori_gain * ori_res], axis=0)
         jacobian = self.robot.jacobian()
         jacobian_pseudo_inverse = np.linalg.pinv(jacobian)
