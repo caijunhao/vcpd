@@ -240,7 +240,7 @@ class SDF(object):
         in_obj_ids = torch.logical_and(self.w_vol == 1e-7,
                                        self.aux_sdf < 0)
         sdf_vol[in_obj_ids] = -1.0
-        out_obj_ids = self.aux_sdf > 1
+        out_obj_ids = sdf_vol > 1
         sdf_vol[out_obj_ids] = 1.0
         return sdf_vol
 

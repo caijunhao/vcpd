@@ -26,15 +26,15 @@ def main(args):
         cfg = json.load(config_file)
     # PyBullet initialization
     mode = p.GUI if args.gui else p.DIRECT
-    p.connect(mode)
+    p.connect(mode, options='--background_color_red=1.0 --background_color_green=1.0 --background_color_blue=1.0')
     p.setGravity(0, 0, -9.8)
     p.configureDebugVisualizer(p.COV_ENABLE_GUI, 0)
-    p.resetDebugVisualizerCamera(cameraDistance=0.57, cameraYaw=0, cameraPitch=-70, cameraTargetPosition=[0, 0, 0])
+    p.resetDebugVisualizerCamera(cameraDistance=0.37, cameraYaw=0, cameraPitch=-70, cameraTargetPosition=[0, 0, 0])
     p.setAdditionalSearchPath(pybullet_data.getDataPath())
-    plane_id = p.loadURDF('plane.urdf')
+    # plane_id = p.loadURDF('plane.urdf')
     # scene initialization
     tray = Tray(**cfg['tray'])
-    tray.set_pose([-1, -1, -1])
+    tray.set_pose([-10, -10, -10])
     cfg['tray']['height'], cfg['tray']['width'], cfg['tray']['theta'] = 0.324, 0.324, 80
     init_tray = Tray(**cfg['tray'])
     cam = Camera(**cfg['camera'])
@@ -45,9 +45,8 @@ def main(args):
         col2_path = os.path.join('assets', component + '_col2.obj')
         ms.load_new_mesh(col2_path)
         vertex_sets[component] = ms.current_mesh().vertex_matrix()
-    pg.set_pose([-2, -2, -2], [0, 0, 0, 1])
+    pg.set_pose([-20, -20, -20], [0, 0, 0, 1])
     mesh_list = os.listdir(args.mesh)
-    angles = np.arange(cfg['num_angle']) / cfg['num_angle'] * 2 * np.pi
     # tsdf initialization
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     cpn = CPN()
@@ -75,7 +74,7 @@ def main(args):
             vis_params['meshScale'] = scale
             col_params['fileName'] = os.path.join(args.mesh, mesh_name, mesh_name + '_col.obj')
             col_params['meshScale'] = scale
-            pos, quat = np.array([1 - 0.5 * j, 1, -0.1]), np.array([0, 0, 0, 1])
+            pos, quat = np.array([1 - 0.5 * j, -10, -0.1]), np.array([0, 0, 0, 1])
             body_params['basePosition'], body_params['baseOrientation'] = pos, quat
             body_params['baseMass'] = 1.0
             # dynamic_list.append(RigidObject(mesh_name,
@@ -85,7 +84,7 @@ def main(args):
                                             col_params=col_params,
                                             body_params=body_params))
             body_params['baseMass'] = 0
-            body_params['basePosition'] = np.array([1 - 0.5 * j, 2, -0.1])
+            body_params['basePosition'] = np.array([1 - 0.5 * j, -11, -0.1])
             static_list.append(RigidObject(mesh_name,
                                            vis_params=vis_params,
                                            col_params=col_params,
@@ -108,7 +107,7 @@ def main(args):
         while not stable and curr_wait < cfg['scene']['wait']:
             stable = dynamic_list[0].is_stable() & dynamic_list[-1].is_stable()
             curr_wait += 1
-        init_tray.set_pose([-2, 0, -1])
+        init_tray.set_pose([-20, -11, -1])
         tray.set_pose([0, 0, 0])
         stable = False
         curr_wait = 0
@@ -120,7 +119,7 @@ def main(args):
         # replace dynamic objects with static ones to keep the scene stable during rendering
         for j in place_order:
             pos, quat = dynamic_list[j].get_pose()
-            dynamic_list[j].set_pose(np.array([1 - 0.5 * j, 1, -0.1]), np.array([0, 0, 0, 1]))
+            dynamic_list[j].set_pose(np.array([1 - 0.5 * j, -10, -0.1]), np.array([0, 0, 0, 1]))
             static_list[j].set_pose(pos, quat)
             poses[j, :3], poses[j, 3:] = pos, quat
         rgb_list, depth_list, pose_list, intr_list = list(), list(), list(), list()
@@ -175,7 +174,7 @@ def main(args):
         print('current antipodal score: {:04f} given {} view(s)'.format(curr_anti_score, len(intr_list)))
         col = pg.is_collided(tray.get_tray_ids())  # , show_col=True
         print('is collided: {}'.format(col))
-        pg.set_pose([-1, 0, -1], [0, 0, 0, 1])
+        pg.set_pose([-10, -10, -1], [0, 0, 0, 1])
         avg_anti_score = (curr_anti_score + avg_anti_score * i) / (i + 1)
         print('# of trials: {} | current average antipodal score: {:04f}'.format(i, avg_anti_score))
         col_free_rate = (1 - int(col) + col_free_rate * i) / (i + 1)
