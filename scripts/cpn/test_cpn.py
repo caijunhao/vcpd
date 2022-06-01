@@ -31,7 +31,7 @@ def main(args):
     p.configureDebugVisualizer(p.COV_ENABLE_GUI, 0)
     p.resetDebugVisualizerCamera(cameraDistance=0.37, cameraYaw=0, cameraPitch=-70, cameraTargetPosition=[0, 0, 0])
     p.setAdditionalSearchPath(pybullet_data.getDataPath())
-    # plane_id = p.loadURDF('plane.urdf')
+    plane_id = p.loadURDF('plane.urdf')
     # scene initialization
     tray = Tray(**cfg['tray'])
     tray.set_pose([-10, -10, -10])
