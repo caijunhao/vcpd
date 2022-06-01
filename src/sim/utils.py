@@ -173,7 +173,6 @@ def visualize_contacts(cp1, cp2, num_vis=50):
                                 lineColorRGB=np.random.uniform(size=3),
                                 lineWidth=0.1) for pid in range(selected_cp2.shape[0])]
     p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
-    input('press Enter to remove contact points')
     p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
     [p.removeBody(cp) for cp in cp1s]
     [p.removeBody(cp) for cp in cp2s]
