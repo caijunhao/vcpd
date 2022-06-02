@@ -5,13 +5,8 @@ custom_parameters = [{"name": "--headless", 'type': int, "default": 0, "help": "
                      {"name": "--gpu", "type": int, "default": 1, "help": "gpu device"},
                      {"name": "--grasp_per_env", "type": int, "default": 1, "help": "grasps attempts per env"},
                      {"name": "--obj_type", "type": int, "default": 1, "help": "0:primitive; 1:random; 2:kit"},
-                     {"name": "--model_used", "type": str, "default": "cpn", "help": "cpn, vpn"},
-                     {"name": "--cpn_path", "type": str, "default": "../../log/20220421_p&b_cpn_32_34188.pth",
-                      "help": "cpn model path"},
-                     {"name": "--vpn_path", "type": str, "default": "../../log/vpn.pth",
-                      "help": "cpn model path"},
-                     {"name": "--rn_path", "type": str, "default": "../../log/rn.pth",
-                      "help": "cpn model path"},
+                     {"name": "--vgn_path", "type": str, "default": "../../log/vgn_conv.pth",
+                      "help": "vgn model path"},
                      {"name": "--config", "type": str, "default": "../../config/config.json",
                       "help": "path to the config file"},
                      {"name": "--obj_asset_root", "type": str, "default": "../../data",
@@ -20,8 +15,6 @@ custom_parameters = [{"name": "--headless", 'type': int, "default": 0, "help": "
                       "help": "root path to panda urdf"},
                      {"name": "--panda_asset_file", "type": str, "default": "panda.urdf",
                       "help": "child path to panda urdf"},
-                     {"name": "--vpn_panda_mesh", "type": str, "default": "../../assets/panda_gripper_col4.ply",
-                      "help": "used for gprts in vpn"},
                      {"name": "--idx", "type": int, "default": 1, "help": "save file idx"},
                      ]
 
@@ -42,29 +35,15 @@ from isaacgym import gymtorch
 
 import math
 import numpy as np
+a=np.array([1,2])
 from scipy.spatial.transform import Rotation as R
 import torch
-from sdf import SDF
-from isaac.utils import get_tray, add_noise, PandaGripper
-if args.model_used == 'cpn':
-    from isaac.utils import cpn_predict
-    from cpn.model import CPN
-    cpn = CPN()
-    cpn.load_network_state_dict(device=device, pth_file=args.cpn_path)
-    cpn.to(device)
-elif args.model_used == 'vpn':
-    import trimesh
-    from isaac.utils import vpn_predict
-    from vpn.model import VPN, RefineNetV0
-    from vpn.utils import  DiscretizedGripper
-    vpn = VPN()
-    rn = RefineNetV0(num_sample=cfg['refine']['num_sample'])
-    vpn.load_network_state_dict(device=device, pth_file=args.vpn_path)
-    rn.load_network_state_dict(device=device, pth_file=args.rn_path)
-    vpn.to(device)
-    rn.to(device)
-    dg = DiscretizedGripper(cfg['refine'])
-
+from vgn.detection import VGN
+from vgn.perception import TSDFVolume
+from vgn.utils.transform import Rotation, Transform
+from vgn.experiments.clutter_removal import State
+from isaac.utils import get_tray, add_noise, PandaGripper, select_grasp, acquire_tsdf, Camera_ig
+from pathlib import Path
 
 def load_panda(sim, args):
     if args.panda_asset_root is None:
@@ -307,11 +286,15 @@ asset_options.fix_base_link = True
 asset_options.thickness = 0.002
 asset_options.mesh_normal_mode = gymapi.COMPUTE_PER_VERTEX
 
+# bin_asset_file = "urdf/tray/traybox.urdf"
+# print("Loading asset '%s' from '%s'" % (bin_asset_file, asset_root))
+# bin_asset = gym.load_asset(sim, asset_root, bin_asset_file, asset_options)
 
 size_list, pose_list = get_tray()
 bins = []
 for i in range(len(size_list)):
     bins.append(gym.create_box(sim, size_list[i][0], size_list[i][1], size_list[i][2], asset_options))
+
 # create static box asset
 asset_options.density = 1000000
 box_z = 1.5
@@ -351,8 +334,11 @@ cam_body_root_idxs = []
 get_intrinsic = False
 cam_z = 0.55
 cam_props = gymapi.CameraProperties()
-cam_props.width = 640
-cam_props.height = 480
+cam_props.width = cfg['camera']['width']
+cam_props.height = cfg['camera']['height']
+# cam_props.far_plane = cfg['camera']['far_val']
+# cam_props.near_plane = cfg['camera']['near_val']
+# cam_props.horizontal_fov = cfg['camera']['fov']
 cam_props.enable_tensors = True
 cam_props.use_collision_geometry = False
 print('Creating %d environments' % num_envs)
@@ -362,6 +348,7 @@ for i in range(num_envs):
     env = gym.create_env(sim, env_lower, env_upper, num_per_row)
     envs.append(env)
 
+    # create bin
     color = gymapi.Vec3(np.random.uniform(0, 1), np.random.uniform(0, 1), np.random.uniform(0, 1))
 
     for ii in range(len(size_list)):
@@ -479,6 +466,8 @@ for i in range(num_envs):
         cx = cam_props.width / 2
         cy = cam_props.height / 2
         intrinsic = np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]], dtype=np.float32)
+
+        camera_intrinsic = Camera_ig(cfg['camera']['width'],cfg['camera']['height'],fx, fy, cx, cy)
         get_intrinsic = True
         # view_matrix = np.matrix(gym.get_camera_view_matrix(sim, env, cam_handle))
 
@@ -519,9 +508,17 @@ root_tensor = gymtorch.wrap_tensor(_root_tensor)
 
 vol_bnd = np.array([cfg['sdf']['x_min'], cfg['sdf']['y_min'], cfg['sdf']['z_min'] - 0.01,
                     cfg['sdf']['x_max'], cfg['sdf']['y_max'], cfg['sdf']['z_max'] - 0.01]).reshape(2, 3)
+
+
+T_vol_base2origin = Transform(R.identity(), vol_bnd[0])
+low_res_tsdf = TSDFVolume(0.3, 40)
+high_res_tsdf = TSDFVolume(0.3, 120)
+
 voxel_length = cfg['sdf']['resolution']
-tsdf = SDF(vol_bnd, voxel_length, rgb=False, device=device)
+vgn = VGN(Path(args.vgn_path))
+
 pg = PandaGripper('../../assets')
+
 grasp_poses = []
 grasps_widths = []
 grasp_rots = []
@@ -551,7 +548,6 @@ time = {'stable': s,
         'shake_4': s + f + d + c + u + a + 4 * s_,
         'open': s + f + d + 2 * c + u + a + 6 * s_,
         }
-
 isaac_rot = np.array([[0, -1, 0, 0], [0, 0, -1, 0], [1, 0, 0, 0], [0, 0, 0, 1]])
 isaac_rot_inv = np.linalg.inv(isaac_rot)
 p1 = gymapi.Transform()
@@ -639,7 +635,7 @@ while True:
             depth = -torch.clone(depth_tensors[i]).cpu().numpy()
             depth[depth == -np.inf] = 0
             depth = add_noise(depth, intrinsic)
-            depth_s.append(depth)
+            depth_s.append(depth.astype(np.float32))
         depths.append(depth_s)
         cam_poses.append(w2c @ isaac_rot_inv)
 
@@ -660,41 +656,34 @@ while True:
     if t == time['tsdf']:
         for i in range(num_envs):
             for j in range(f):
-                tsdf.integrate(depths[j][i], intrinsic, cam_poses[j])
-            depth = tsdf.get_heightmap()
-            # tsdf.write_mesh('out_%s.ply' % i, *tsdf.compute_mesh(step_size=1))
-            if args.model_used == 'cpn':
-                pos, rot, quat, cp1, cp2 = cpn_predict(tsdf, cpn, pg, cfg)
-            elif args.model_used == 'vpn':
-                panda_gripper_mesh = trimesh.load_mesh(args.vpn_panda_mesh)
-                gpr_pts = torch.from_numpy(panda_gripper_mesh.vertices.astype(np.float32)).to(device)
-                pos, rot, quat = vpn_predict(tsdf, vpn, dg, rn, gpr_pts, device)
-            if pos is None:
+                m_base2cam = cam_poses[j]
+                T_base2cam = Transform(Rotation.from_matrix(m_base2cam[0:3, 0:3]), m_base2cam[0:3, 3])
+                T_vol_cam2origin = T_base2cam.inverse() * T_vol_base2origin
+                low_res_tsdf.integrate(depths[j][i], camera_intrinsic, T_vol_cam2origin)
+                high_res_tsdf.integrate(depths[j][i], camera_intrinsic, T_vol_cam2origin)
+
+            tsdf, pc = acquire_tsdf(low_res_tsdf, high_res_tsdf)
+            state = State(tsdf, pc)
+            grasps, scores, planning_time = vgn(state)
+            if len(grasps) == 0:
                 t = time['up'] + 20
                 continue
-            grasp_poses.append(pos)
+            grasp, score = select_grasp(grasps, scores)
+            T_origin2grasp, width = grasp.pose, grasp.width
+            T_base2grasp = T_vol_base2origin * T_origin2grasp
+            pos = T_base2grasp.translation
+            quat, rot = T_base2grasp.rotation.as_quat(), T_base2grasp.rotation.as_matrix()
+            gripper_pos = pos - rot[:, 2] * 0.05
+
+            grasp_poses.append(gripper_pos)
             grasp_rots.append(rot)
             grasp_quats.append(quat)
-            # grasps_widths.append(width)
-            tsdf.reset()
 
-            if not args.headless and args.model_used == 'cpn':
-                gp = gymapi.Transform()
-                gp.p = gymapi.Vec3(grasp_poses[-1][0], grasp_poses[-1][1], grasp_poses[-1][2])
-                gp.r = gymapi.Quat(grasp_quats[-1][0], grasp_quats[-1][1], grasp_quats[-1][2], grasp_quats[-1][3])
-                gymutil.draw_lines(axes_geom, gym, viewer, envs[i], gp)
-
-                color = gymapi.Vec3(1, 0, 0)
-                p1.p = gymapi.Vec3(cp1[0], cp1[1], cp1[2])
-                p2.p = gymapi.Vec3(cp2[0], cp2[1], cp2[2])
-                gymutil.draw_line(p1.p, p2.p, color, gym, viewer, envs[i])
-                gymutil.draw_lines(sphere_geom_1, gym, viewer, envs[i], p1)
-                gymutil.draw_lines(sphere_geom_2, gym, viewer, envs[i], p2)
-
+            low_res_tsdf = TSDFVolume(0.3, 40)
+            high_res_tsdf = TSDFVolume(0.3, 120)
 
         grasp_poses = np.array(grasp_poses)
         grasp_rots = np.array(grasp_rots)
-        # grasps_widths = np.array(grasps_widths)
         grasp_quats = np.array(grasp_quats)
         grasp_quats = torch.from_numpy(grasp_quats).to(device)
 
@@ -751,6 +740,7 @@ while True:
                                                 gymtorch.unwrap_tensor(actor_indices),
                                                 num_envs)
 
+
     if t == time['up']+1:
         pos_action[:] = get_gripper_dof(num_envs, action='open', device=device)
         gym.set_dof_position_target_tensor(sim, gymtorch.unwrap_tensor(pos_action))
@@ -766,7 +756,8 @@ while True:
         grasp_quats = []
         depths = []
         cam_poses = []
-        tsdf.reset()
+        low_res_tsdf = TSDFVolume(0.3, 40)
+        high_res_tsdf = TSDFVolume(0.3, 120)
 
     t += 1
 
