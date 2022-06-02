@@ -2,7 +2,6 @@ from torch.nn.functional import grid_sample
 import numpy as np
 import torch
 
-
 def interpolation(volumes, indices, mode='bilinear', padding_mode='zeros'):
     """
     Extract features from volumes using grid_sample function provided by pytorch.
@@ -49,7 +48,7 @@ def sample_contact_points(tsdf, th_a=30, th_s=0.2, start=0.01, end=0.08, num_ste
     flag_s = torch.abs(tsdf.extract_sdf(v, post_processed=post_processed, gaussian_blur=gaussian_blur)) < th_s
     v, n = v[flag_s], n[flag_s]
     # filter out contact points whose surface normals are outside the angle threshold
-    flag_a = torch.abs(n[:, 2]) <= torch.cos(torch.pi / 2 - th_a)
+    flag_a = torch.abs(n[:, 2]) <= torch.cos(np.pi / 2 - th_a)
     v, n = v[flag_a], n[flag_a]
     stride = (end - start) / num_step
     samples = n.unsqueeze(dim=1) * (start + torch.arange(num_step, dtype=dtype, device=dev).reshape(1, -1, 1) * stride)
@@ -72,8 +71,8 @@ def sample_contact_points(tsdf, th_a=30, th_s=0.2, start=0.01, end=0.08, num_ste
 
 def select_gripper_pose(tsdf, pg, score, cp1, cp2, gripper_depth,
                         num_angle=32, max_width=0.08,
-                        th_s=0.997, th_c=0.999,
-                        check_tray=True,
+                        th_s=0.997, th_c=0.999, robotiq_rot=None,
+                        check_tray=True,gripper = 'panda',
                         post_processed=True, gaussian_blur=True):
     """
     Select collision-free pose according to the quality scores of the contact points.
@@ -117,7 +116,7 @@ def select_gripper_pose(tsdf, pg, score, cp1, cp2, gripper_depth,
     # x = u[..., 1]  # num_cp * 3
     # z = torch.cross(x, y, dim=1)
     rot0 = torch.stack([x, y, z], dim=2)  # num_cp * 3 * 3
-    angles = torch.arange(num_angle, dtype=dtype, device=dev) / num_angle * torch.pi  # num_angle
+    angles = torch.arange(num_angle, dtype=dtype, device=dev) / num_angle * np.pi  # num_angle
     delta_rots = basic_rots(angles, axis='y')  # num_angle * 3 * 3
     rots = torch.matmul(rot0.unsqueeze(dim=1), delta_rots.unsqueeze(dim=0))  # num_cp * num_angle * 3 * 3
     z_flag = rots[..., -1, -1] > 0
@@ -125,22 +124,42 @@ def select_gripper_pose(tsdf, pg, score, cp1, cp2, gripper_depth,
     i, j = i[z_flag], j[z_flag]
     rots[i, j, :, 0], rots[i, j, :, 2] = -rots[i, j, :, 0], -rots[i, j, :, 2]
     ys = rots[..., 1].unsqueeze(dim=2)  # num_cp * num_angle * 1 * 3
-    n_h, n_l, n_r = pg['hand'].shape[0], pg['left_finger'].shape[0], pg['right_finger'].shape[0]
-    vs = torch.from_numpy(np.concatenate([pg['hand'], pg['left_finger'], pg['right_finger']], axis=0)).to(dtype).to(dev)
+    if gripper == 'panda':
+        n_h, n_l, n_r = pg['hand'].shape[0], pg['left_finger'].shape[0], pg['right_finger'].shape[0]
+        vs = torch.from_numpy(np.concatenate([pg['hand'], pg['left_finger'], pg['right_finger']], axis=0)).to(dtype).to(dev)
+        gripper_pos = pos.reshape(num_cp, 1, 3) - rots[..., 2] * gripper_depth  # num_cp * num_angle * 3
+    else:
+        vs = torch.from_numpy(pg['rq85']).to(dtype).to(dev)
+        gripper_pos = pos.reshape(num_cp, 1, 3) - rots[..., 2] * gripper_depth  # num_cp * num_angle * 3
     num_v = vs.shape[0]
-    gripper_pos = pos.reshape(num_cp, 1, 3) - rots[..., 2] * gripper_depth  # num_cp * num_angle * 3
+
+
     vs = torch.matmul(rots, vs.permute(1, 0).unsqueeze(0).unsqueeze(0)).permute(0, 1, 3, 2) + gripper_pos.unsqueeze(2)  # num_cp * num_angle * num_v * 3
-    vs[..., n_h:n_h+n_l, :] = vs[..., n_h:n_h+n_l, :] - offset * ys  # left finger vertices
-    vs[..., n_h+n_l:n_h+n_l+n_r, :] = vs[..., n_h+n_l:n_h+n_l+n_r, :] + offset * ys  # right finger vertices
+    if gripper == 'panda':
+        vs[..., n_h:n_h+n_l, :] = vs[..., n_h:n_h+n_l, :] - offset * ys  # left finger vertices
+        vs[..., n_h+n_l:n_h+n_l+n_r, :] = vs[..., n_h+n_l:n_h+n_l+n_r, :] + offset * ys  # right finger vertices
     sdv = tsdf.extract_sdf(vs.reshape(-1, 3),
                            post_processed=post_processed, gaussian_blur=gaussian_blur).reshape(num_cp, num_angle, num_v)
+    th_tray_strict = -1000000
+    th_tray_soft = -1
     if check_tray:
         vs_ids = tsdf.get_ids(vs.reshape(-1, 3)).reshape(num_cp, num_angle, num_v, 3)
-        oob_flag = torch.logical_or(torch.logical_or(vs_ids[..., 0] < 0, vs_ids[..., 0] >= tsdf.shape[0]),
-                                    torch.logical_or(vs_ids[..., 1] < 0, vs_ids[..., 1] >= tsdf.shape[1]))
-        sdv[oob_flag] = -1
+        oob_flag = torch.logical_or(torch.logical_or(vs_ids[..., 0] < 0 , vs_ids[..., 0] >= tsdf.shape[0] ),
+                                    torch.logical_or(vs_ids[..., 1] < 0 , vs_ids[..., 1] >= tsdf.shape[1] ))
+        sdv[oob_flag] = th_tray_strict
+        flag_strict = torch.sum(sdv, dim=-1) > 0
+        sdv[oob_flag] = th_tray_soft
+    del vs
+    torch.cuda.empty_cache()
     num_free = torch.sum(sdv > 0.2, dim=-1)  # num_cp * num_angle
     flag_c = num_free > torch.max(num_free) * th_c
+    if check_tray:
+        flag_strict = flag_strict * flag_c
+        if not flag_strict.sum() == 0:
+            flag_c = flag_strict
+        # flag_c = flag_strict
+    if flag_c.sum()==0:
+        return None, None, None, None, None
     rots = rots[flag_c]
     gripper_pos = gripper_pos[flag_c]
     width = torch.cat([width] * num_angle, dim=1)[flag_c]
@@ -158,6 +177,9 @@ def select_gripper_pose(tsdf, pg, score, cp1, cp2, gripper_depth,
     grasp_directions = rots[..., 1]
     cp1 = (pos + grasp_directions * distance.reshape(-1, 1) / 2)
     cp2 = (pos - grasp_directions * distance.reshape(-1, 1) / 2)
+    if not gripper == 'panda':
+        rots = rots @ robotiq_rot
+        gripper_pos = (cp1 + cp2) / 2 - rots[..., 2] * gripper_depth
     return gripper_pos, rots, width, cp1, cp2
 
 
