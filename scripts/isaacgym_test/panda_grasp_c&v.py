@@ -36,7 +36,9 @@ device = 'cuda'
 import json
 with open(args.config, 'r') as config_file:
     cfg = json.load(config_file)
-
+import sys
+sys.path.append('/home/sujc/catkin_ws/src/vcpd')
+sys.path.append('/home/sujc/catkin_ws/src/vcpd/src')
 from isaacgym import gymapi
 from isaacgym import gymtorch
 
@@ -56,7 +58,7 @@ elif args.model_used == 'vpn':
     import trimesh
     from isaac.utils import vpn_predict
     from vpn.model import VPN, RefineNetV0
-    from vpn.utils import  DiscretizedGripper
+    from vpn.utils import DiscretizedGripper
     vpn = VPN()
     rn = RefineNetV0(num_sample=cfg['refine']['num_sample'])
     vpn.load_network_state_dict(device=device, pth_file=args.vpn_path)

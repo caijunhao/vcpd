@@ -29,7 +29,9 @@ device = 'cuda'
 import json
 with open(args.config, 'r') as config_file:
     cfg = json.load(config_file)
-
+import sys
+sys.path.append('/home/sujc/catkin_ws/src/vcpd')
+sys.path.append('/home/sujc/catkin_ws/src/vcpd/src')
 from isaacgym import gymapi
 from isaacgym import gymtorch
 
@@ -771,7 +773,7 @@ while True:
         break
 print('Done')
 txt = np.array([succ, count]).astype(np.int)
-path = '../log/%s'%args.model_used
+path = '../log/vgn'
 if not os.path.exists(path):
     os.makedirs(path)
 name = ['primitive', 'random', 'kit']
