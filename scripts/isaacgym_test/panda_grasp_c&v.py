@@ -5,7 +5,7 @@ custom_parameters = [{"name": "--headless", 'type': int, "default": 0, "help": "
                      {"name": "--gpu", "type": int, "default": 1, "help": "gpu device"},
                      {"name": "--grasp_per_env", "type": int, "default": 1, "help": "grasps attempts per env"},
                      {"name": "--obj_type", "type": int, "default": 1, "help": "0:primitive; 1:random; 2:kit"},
-                     {"name": "--model_used", "type": str, "default": "cpn", "help": "cpn, vpn"},
+                     {"name": "--model_used", "type": str, "default": "cpn", "help": "cpn, vpn, rn"},
                      {"name": "--cpn_path", "type": str, "default": "../../log/20220421_p&b_cpn_32_34188.pth",
                       "help": "cpn model path"},
                      {"name": "--vpn_path", "type": str, "default": "../../log/vpn.pth",
@@ -48,18 +48,26 @@ from scipy.spatial.transform import Rotation as R
 import torch
 from sdf import SDF
 from isaac.utils import get_tray, add_noise, PandaGripper
+torch.manual_seed(177)
+np.random.seed(177)
+
 if args.model_used == 'cpn':
     from isaac.utils import cpn_predict
     from cpn.model import CPN
+    print('use cpn')
     cpn = CPN()
     cpn.load_network_state_dict(device=device, pth_file=args.cpn_path)
     cpn.to(device)
-elif args.model_used == 'vpn':
+else:
     import trimesh
     from isaac.utils import vpn_predict
     from vpn.model import VPN, RefineNetV0
     from vpn.utils import DiscretizedGripper
     vpn = VPN()
+    if args.model_used == 'vpn':
+        print('use vpn')
+    else:
+        print('use vpn and rn')
     rn = RefineNetV0(num_sample=cfg['refine']['num_sample'])
     vpn.load_network_state_dict(device=device, pth_file=args.vpn_path)
     rn.load_network_state_dict(device=device, pth_file=args.rn_path)
@@ -667,10 +675,13 @@ while True:
             # tsdf.write_mesh('out_%s.ply' % i, *tsdf.compute_mesh(step_size=1))
             if args.model_used == 'cpn':
                 pos, rot, quat, cp1, cp2 = cpn_predict(tsdf, cpn, pg, cfg)
-            elif args.model_used == 'vpn':
+            else:
+                use_rn = False
+                if args.model_used == 'rn':
+                    use_rn = True
                 panda_gripper_mesh = trimesh.load_mesh(args.vpn_panda_mesh)
                 gpr_pts = torch.from_numpy(panda_gripper_mesh.vertices.astype(np.float32)).to(device)
-                pos, rot, quat = vpn_predict(tsdf, vpn, dg, rn, gpr_pts, device)
+                pos, rot, quat = vpn_predict(tsdf, vpn, dg, rn, gpr_pts, device, use_rn=use_rn)
             if pos is None:
                 t = time['up'] + 20
                 continue
