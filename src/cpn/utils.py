@@ -99,7 +99,7 @@ def select_gripper_pose(tsdf, pg, score, cp1, cp2, gripper_depth,
     try:
         while True:
             th_ = score[0] * th_s  # select top 0.1% contact points as candidates
-            if (score >= th_).sum()<=5:
+            if (score >= th_).sum()<=5 and len(score)>5:
                 th_s -= 0.001
             else:
                 th_s = th_
