@@ -1,7 +1,7 @@
 from torch.nn.functional import grid_sample
 import numpy as np
 import torch
-
+from scripts.utils import visual_cpts, visual_grasp_pt
 def interpolation(volumes, indices, mode='bilinear', padding_mode='zeros'):
     """
     Extract features from volumes using grid_sample function provided by pytorch.
@@ -73,7 +73,8 @@ def select_gripper_pose(tsdf, pg, score, cp1, cp2, gripper_depth,
                         num_angle=32, max_width=0.08,
                         th_s=0.997, th_c=0.999, robotiq_rot=None,
                         check_tray=True,gripper = 'panda',
-                        post_processed=True, gaussian_blur=True):
+                        post_processed=True, gaussian_blur=True,
+                        points_show=None):
     """
     Select collision-free pose according to the quality scores of the contact points.
     :param tsdf: the SDF instance
@@ -95,10 +96,19 @@ def select_gripper_pose(tsdf, pg, score, cp1, cp2, gripper_depth,
     dev = score.device
     score = torch.sigmoid(score)
     score, rank = torch.sort(score, descending=True)
-    th_s = score[0] * th_s  # select top 0.1% contact points as candidates
-    rank = rank[score >= th_s]
-    num_cp = rank.shape[0]
-    cp1, cp2 = cp1[rank], cp2[rank]
+    try:
+        while True:
+            th_ = score[0] * th_s  # select top 0.1% contact points as candidates
+            if (score >= th_).sum()<=5:
+                th_s -= 0.001
+            else:
+                th_s = th_
+                break
+        rank = rank[score >= th_s]
+        num_cp = rank.shape[0]
+        cp1, cp2 = cp1[rank], cp2[rank]
+    except:
+        num_cp = 1
     pos = (cp1 + cp2) / 2  # num_cp * 3
     y = cp1 - cp2
     distance = torch.linalg.norm(y, dim=1, keepdim=True)
