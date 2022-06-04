@@ -20,7 +20,7 @@ class Camera_ig(object):
         self.cy = cy
 
 
-def vpn_predict(tsdf, vpn, dg, rn, gpr_pts, device):
+def vpn_predict(tsdf, vpn, dg, rn, gpr_pts, device, use_rn=False):
     from vpn.utils import rank_and_group_poses
     from src.sim.utils import basic_rot_mat
 
@@ -42,30 +42,30 @@ def vpn_predict(tsdf, vpn, dg, rn, gpr_pts, device):
         return None, None, None
 
     score, pose = groups[0]['queue'].get()
-    # pos, rot0 = pose[0:3], R.from_quat(pose[6:10]).as_matrix()
-    # rot = rot0 @ basic_rot_mat(np.pi / 2, axis='z').astype(np.float32)
-    # quat = R.from_matrix(rot).as_quat()
-    # gripper_pos = pos - 0.08 * rot[:, 2]
-
-    for _ in range(5):
-        trans = (pose[0:3] + pose[3:6] * 0.01).astype(np.float32)
-        rot = R.from_quat(pose[6:10]).as_matrix().astype(np.float32)
-        pos = dg.sample_grippers(trans.reshape(1, 3), rot.reshape(1, 3, 3), inner_only=False)
-        pos = np.expand_dims(pos.transpose((2, 1, 0)), axis=0)  # 1 * 3 * 2048 * 1
-        sample['perturbed_pos'] = torch.from_numpy(pos).to(device)
-        delta_rot = rn(sample)
-        delta_rot = torch.squeeze(delta_rot).detach().cpu().numpy()
-        rot_recover = rot @ delta_rot
-        approach_recover = rot_recover[:, 2]
-        quat_recover = R.from_matrix(rot_recover).as_quat()
-        trans_recover = trans
-        # trans_recover[2] -= 0.005
-        pos_recover = pose[0:3]
-        pose = np.concatenate([pos_recover, -approach_recover, quat_recover])
     pos, rot0 = pose[0:3], R.from_quat(pose[6:10]).as_matrix()
     rot = rot0 @ basic_rot_mat(np.pi / 2, axis='z').astype(np.float32)
     quat = R.from_matrix(rot).as_quat()
     gripper_pos = pos - 0.08 * rot[:, 2]
+    if use_rn:
+        for _ in range(5):
+            trans = (pose[0:3] + pose[3:6] * 0.01).astype(np.float32)
+            rot = R.from_quat(pose[6:10]).as_matrix().astype(np.float32)
+            pos = dg.sample_grippers(trans.reshape(1, 3), rot.reshape(1, 3, 3), inner_only=False)
+            pos = np.expand_dims(pos.transpose((2, 1, 0)), axis=0)  # 1 * 3 * 2048 * 1
+            sample['perturbed_pos'] = torch.from_numpy(pos).to(device)
+            delta_rot = rn(sample)
+            delta_rot = torch.squeeze(delta_rot).detach().cpu().numpy()
+            rot_recover = rot @ delta_rot
+            approach_recover = rot_recover[:, 2]
+            quat_recover = R.from_matrix(rot_recover).as_quat()
+            trans_recover = trans
+            # trans_recover[2] -= 0.005
+            pos_recover = pose[0:3]
+            pose = np.concatenate([pos_recover, -approach_recover, quat_recover])
+        pos, rot0 = pose[0:3], R.from_quat(pose[6:10]).as_matrix()
+        rot = rot0 @ basic_rot_mat(np.pi / 2, axis='z').astype(np.float32)
+        quat = R.from_matrix(rot).as_quat()
+        gripper_pos = pos - 0.08 * rot[:, 2]
     return gripper_pos, rot, quat
 
 
@@ -73,12 +73,16 @@ def cpn_predict(tsdf, cpn, pg, cfg):
     from cpn.utils import sample_contact_points, select_gripper_pose, clustering
     cp1s, cp2s = sample_contact_points(tsdf, post_processed=True, gaussian_blur=True, start=0.01,
                                        step_size=2)
+    if len(cp1s) == 0:
+        return None, None, None, None, None
     ids_cp1, ids_cp2 = tsdf.get_ids(cp1s), tsdf.get_ids(cp2s)
+
     sample = dict()
     sample['sdf_volume'] = tsdf.gaussian_blur(tsdf.post_processed_volume).unsqueeze(dim=0).unsqueeze(dim=0)
     sample['ids_cp1'] = ids_cp1.permute((1, 0)).unsqueeze(dim=0).unsqueeze(dim=-1)
     sample['ids_cp2'] = ids_cp2.permute((1, 0)).unsqueeze(dim=0).unsqueeze(dim=-1)
     out = torch.squeeze(cpn.forward(sample))
+
     gripper_poses, rots, widths, cp1s_, cp2s_ = select_gripper_pose(tsdf, pg.vertex_sets,
                                                                     out, cp1s, cp2s, cfg['gripper']['depth'],
                                                                     check_tray=True,
