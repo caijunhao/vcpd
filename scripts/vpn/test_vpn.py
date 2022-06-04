@@ -5,7 +5,7 @@ from sim.camera import Camera
 from sim.objects import RigidObject, PandaGripper
 from sim.tray import Tray
 from sim.utils import *
-from sdf import SDF
+from vpn_sdf import TSDF
 import xml.etree.ElementTree as et
 import pybullet as p
 import pybullet_data
@@ -53,7 +53,7 @@ def main(args):
     vol_bnd = np.array([cfg['sdf']['x_min'], cfg['sdf']['y_min'], cfg['sdf']['z_min'],
                         cfg['sdf']['x_max'], cfg['sdf']['y_max'], cfg['sdf']['z_max']]).reshape(2, 3)
     voxel_length = cfg['sdf']['resolution']
-    tsdf = SDF(vol_bnd, voxel_length, rgb=False, device=device)
+    tsdf = TSDF(vol_bnd.T, voxel_length, rgb=False, device=device)
     panda_gripper_mesh = trimesh.load_mesh('assets/panda_gripper_col4.ply')
     gpr_pts = torch.from_numpy(panda_gripper_mesh.vertices.astype(np.float32)).to(device)
     i = 0
@@ -131,15 +131,14 @@ def main(args):
                                   cfg['camera']['y_min'], cfg['camera']['y_max'],
                                   cfg['camera']['z_min'], cfg['camera']['z_max'],
                                   cfg['camera']['up_vector'])
-        curr_anti_score, col = 0.0, 1
         for ri, di, pi, ii, idx in zip(rgb_list, depth_list, pose_list, intr_list, range(len(intr_list))):
             ri = ri[..., 0:3].astype(np.float32)
             di = cam.add_noise(di).astype(np.float32)
             pi, ii = pi.astype(np.float32), ii.astype(np.float32)
-            tsdf.integrate(di, ii, pi, rgb=ri)
+            tsdf.tsdf_integrate(di, ii, pi, rgb=ri)
         sample = dict()
         v, _, n, _ = tsdf.compute_mesh()
-        v, n = torch.from_numpy(v).to(device), torch.from_numpy(n).to(device)
+        v, n = torch.from_numpy(v).to(device).to(torch.float32), torch.from_numpy(n).to(device).to(torch.float32)
         ids = tsdf.get_ids(v)
         sample['sdf_volume'] = tsdf.gaussian_blur(tsdf.post_processed_volume).unsqueeze(dim=0).unsqueeze(dim=0)
         sample['pts'] = v.permute((1, 0)).unsqueeze(dim=0).unsqueeze(dim=-1)
@@ -148,7 +147,7 @@ def main(args):
         sample['occupancy_volume'] = torch.zeros_like(sample['sdf_volume'], device=device)
         sample['occupancy_volume'][sample['sdf_volume'] <= 0] = 1
         sample['origin'] = tsdf.origin
-        sample['resolution'] = torch.tensor([[tsdf.res]], dtype=torch.float32, device=device)
+        sample['resolution'] = torch.tensor([[tsdf.resolution]], dtype=torch.float32, device=device)
         out = torch.sigmoid(vpn.forward(sample))
         groups = rank_and_group_poses(sample, out, device, gpr_pts, collision_check=True)
         if groups is None:
@@ -206,8 +205,6 @@ def main(args):
             rot_recover = rot @ delta_rot
             approach_recover = rot_recover[:, 2]
             quat_recover = Rotation.from_matrix(rot_recover).as_quat()
-            trans_recover = trans
-            # trans_recover[2] -= 0.005
             pos_recover = pose[0:3]
             pose = np.concatenate([pos_recover, -approach_recover, quat_recover])
         pos, rot0 = pose[0:3], Rotation.from_quat(pose[6:10]).as_matrix()
@@ -276,7 +273,7 @@ if __name__ == '__main__':
                         help='the number of test trials.')
     parser.add_argument('--gui',
                         type=int,
-                        default=0,
+                        default=1,
                         help='choose 0 for DIRECT mode and 1 (or others) for GUI mode.')
     parser.add_argument('--cuda_device',
                         default='0',
