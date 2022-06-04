@@ -1,4 +1,5 @@
 from isaacgym import gymutil
+
 custom_parameters = [{"name": "--headless", 'type': int, "default": 0, "help": "Direct 1, GUI 0"},
                      {"name": "--num_envs", "type": int, "default": 2, "help": "Number of environments to create"},
                      {"name": "--num_objects", "type": int, "default": 5, "help": "Number of objects in the bin"},
@@ -48,8 +49,8 @@ from scipy.spatial.transform import Rotation as R
 import torch
 from sdf import SDF
 from isaac.utils import get_tray, add_noise, PandaGripper
-torch.manual_seed(177)
-np.random.seed(177)
+# torch.manual_seed(177)
+# np.random.seed(177)
 
 if args.model_used == 'cpn':
     from isaac.utils import cpn_predict
@@ -136,7 +137,9 @@ def load_obj(gym, sim, asset_root, asset_path, asset_options=None):
         asset_options.override_com = True
         asset_options.override_inertia = True
         asset_options.vhacd_enabled = True
-    for asset in asset_path:
+    idxs = np.random.choice(len(asset_path), num_objects, replace=False)
+    for idx in idxs:
+        asset = asset_path[idx]
         print("Loading asset '%s' from '%s'" % (asset, asset_root))
         current_asset = gym.load_asset(sim, asset_root, asset, asset_options)
         if current_asset is None:
@@ -543,7 +546,7 @@ delta_d = 0.004
 s = stable = 500
 f = cfg['test']['frame']
 d = down = np.round(init_d / delta_d)
-u = up = 300
+u = up = 400
 s_ = shake = 30
 a = away = 450
 c = close = 120
@@ -604,12 +607,13 @@ def visual_cpts(cp1s ,cp2s,sphere_geom_1s,sphere_geom_2s,env,clear=False):
         gymutil.draw_line(p1.p, p2.p, color, gym, viewer, env)
         gymutil.draw_lines(sphere_geom_1s, gym, viewer, env, p1)
         gymutil.draw_lines(sphere_geom_2s, gym, viewer, env, p2)
-
+continue_num = 0
 grasp_attempts = min(args.grasp_per_env, num_objects)
 while True:
     if not args.headless:
         if gym.query_viewer_has_closed(viewer):
             break
+
     # step the physics
     gym.simulate(sim)
     gym.fetch_results(sim, True)
@@ -669,10 +673,11 @@ while True:
 
     if t == time['tsdf']:
         for i in range(num_envs):
+
             for j in range(f):
                 tsdf.integrate(depths[j][i], intrinsic, cam_poses[j])
             depth = tsdf.get_heightmap()
-            # tsdf.write_mesh('out_%s.ply' % i, *tsdf.compute_mesh(step_size=1))
+            # tsdf.write_mesh('out_%s.ply' % i, *tsdf.compute_mesh(step_size=2))
             if args.model_used == 'cpn':
                 pos, rot, quat, cp1, cp2 = cpn_predict(tsdf, cpn, pg, cfg)
             else:
@@ -684,6 +689,10 @@ while True:
                 pos, rot, quat = vpn_predict(tsdf, vpn, dg, rn, gpr_pts, device, use_rn=use_rn)
             if pos is None:
                 t = time['up'] + 20
+                continue_num += 1
+                print('env %s ,continue %s'%(i, continue_num))
+                if continue_num == 3:
+                    exit()
                 continue
             grasp_poses.append(pos)
             grasp_rots.append(rot)
