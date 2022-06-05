@@ -1,7 +1,7 @@
 from torch.nn.functional import grid_sample
 import numpy as np
 import torch
-from scripts.utils import visual_cpts, visual_grasp_pt
+
 def interpolation(volumes, indices, mode='bilinear', padding_mode='zeros'):
     """
     Extract features from volumes using grid_sample function provided by pytorch.
