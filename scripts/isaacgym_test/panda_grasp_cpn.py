@@ -1,17 +1,14 @@
 from isaacgym import gymutil
-
+import time as tt
+aa=tt.time()
+print('use cpn')
 custom_parameters = [{"name": "--headless", 'type': int, "default": 0, "help": "Direct 1, GUI 0"},
-                     {"name": "--num_envs", "type": int, "default": 2, "help": "Number of environments to create"},
+                     {"name": "--num_envs", "type": int, "default": 500, "help": "Number of environments to create"},
                      {"name": "--num_objects", "type": int, "default": 5, "help": "Number of objects in the bin"},
-                     {"name": "--gpu", "type": int, "default": 1, "help": "gpu device"},
+                     {"name": "--gpu", "type": int, "default": 0, "help": "gpu device"},
                      {"name": "--grasp_per_env", "type": int, "default": 1, "help": "grasps attempts per env"},
                      {"name": "--obj_type", "type": int, "default": 1, "help": "0:primitive; 1:random; 2:kit"},
-                     {"name": "--model_used", "type": str, "default": "cpn", "help": "cpn, vpn, rn"},
                      {"name": "--cpn_path", "type": str, "default": "../../log/20220421_p&b_cpn_32_34188.pth",
-                      "help": "cpn model path"},
-                     {"name": "--vpn_path", "type": str, "default": "../../log/vpn.pth",
-                      "help": "cpn model path"},
-                     {"name": "--rn_path", "type": str, "default": "../../log/rn.pth",
                       "help": "cpn model path"},
                      {"name": "--config", "type": str, "default": "../../config/config.json",
                       "help": "path to the config file"},
@@ -21,8 +18,6 @@ custom_parameters = [{"name": "--headless", 'type': int, "default": 0, "help": "
                       "help": "root path to panda urdf"},
                      {"name": "--panda_asset_file", "type": str, "default": "panda.urdf",
                       "help": "child path to panda urdf"},
-                     {"name": "--vpn_panda_mesh", "type": str, "default": "../../assets/panda_gripper_col4.ply",
-                      "help": "used for gprts in vpn"},
                      {"name": "--idx", "type": int, "default": 1, "help": "save file idx"},
                      ]
 
@@ -38,8 +33,8 @@ import json
 with open(args.config, 'r') as config_file:
     cfg = json.load(config_file)
 import sys
-sys.path.append('/home/sujc/catkin_ws/src/vcpd')
-sys.path.append('/home/sujc/catkin_ws/src/vcpd/src')
+sys.path.append('/home/amax_sjc/catkin_ws/src/vcpd')
+sys.path.append('/home/amax_sjc/catkin_ws/src/vcpd/src')
 from isaacgym import gymapi
 from isaacgym import gymtorch
 
@@ -52,29 +47,12 @@ from isaac.utils import get_tray, add_noise, PandaGripper
 # torch.manual_seed(177)
 # np.random.seed(177)
 
-if args.model_used == 'cpn':
-    from isaac.utils import cpn_predict
-    from cpn.model import CPN
-    print('use cpn')
-    cpn = CPN()
-    cpn.load_network_state_dict(device=device, pth_file=args.cpn_path)
-    cpn.to(device)
-else:
-    import trimesh
-    from isaac.utils import vpn_predict
-    from vpn.model import VPN, RefineNetV0
-    from vpn.utils import DiscretizedGripper
-    vpn = VPN()
-    if args.model_used == 'vpn':
-        print('use vpn')
-    else:
-        print('use vpn and rn')
-    rn = RefineNetV0(num_sample=cfg['refine']['num_sample'])
-    vpn.load_network_state_dict(device=device, pth_file=args.vpn_path)
-    rn.load_network_state_dict(device=device, pth_file=args.rn_path)
-    vpn.to(device)
-    rn.to(device)
-    dg = DiscretizedGripper(cfg['refine'])
+from isaac.utils import cpn_predict
+from cpn.model import CPN
+cpn = CPN()
+cpn.load_network_state_dict(device=device, pth_file=args.cpn_path)
+cpn.to(device)
+
 
 
 def load_panda(sim, args):
@@ -137,9 +115,10 @@ def load_obj(gym, sim, asset_root, asset_path, asset_options=None):
         asset_options.override_com = True
         asset_options.override_inertia = True
         asset_options.vhacd_enabled = True
-    idxs = np.random.choice(len(asset_path), num_objects, replace=False)
-    for idx in idxs:
-        asset = asset_path[idx]
+
+    for asset in asset_path:
+        if '168' in asset:
+            continue
         print("Loading asset '%s' from '%s'" % (asset, asset_root))
         current_asset = gym.load_asset(sim, asset_root, asset, asset_options)
         if current_asset is None:
@@ -152,8 +131,7 @@ def load_obj(gym, sim, asset_root, asset_path, asset_options=None):
         gym.set_asset_rigid_shape_properties(current_asset, [obj_prop])
         loaded_assets.append(current_asset)
         count += 1
-        if count == args.num_objects:
-            break
+        print(count)
     return loaded_assets
 
 
@@ -381,7 +359,7 @@ for i in range(num_envs):
         tray_handles.append(gym.create_actor(env, bins[ii], pose_list[ii], "bin" + str(ii), i, 0))
         gym.set_rigid_body_color(env, tray_handles[-1], 0, gymapi.MESH_VISUAL_AND_COLLISION, color)
 
-    obj_list = np.random.choice(obj_assets, args.num_objects, replace=True)
+    obj_list = np.random.choice(obj_assets, args.num_objects, replace=len(obj_assets)<args.num_objects)
 
     # create 5 boxes
     pose = gymapi.Transform()
@@ -534,6 +512,7 @@ vol_bnd = np.array([cfg['sdf']['x_min'], cfg['sdf']['y_min'], cfg['sdf']['z_min'
                     cfg['sdf']['x_max'], cfg['sdf']['y_max'], cfg['sdf']['z_max'] - 0.01]).reshape(2, 3)
 voxel_length = cfg['sdf']['resolution']
 tsdf = SDF(vol_bnd, voxel_length, rgb=False, device=device)
+
 pg = PandaGripper('../../assets')
 grasp_poses = []
 grasps_widths = []
@@ -644,6 +623,7 @@ while True:
     gym.start_access_image_tensors(sim)
 
     if time['stable'] < t <= time['tsdf']:
+        print('start render')
         depth_s = []
         mass = []
         for i in range(num_envs):
@@ -672,21 +652,16 @@ while True:
                                                 len(cam_body_root_idxs))
 
     if t == time['tsdf']:
+        print('start tsdf integrate')
         for i in range(num_envs):
 
             for j in range(f):
                 tsdf.integrate(depths[j][i], intrinsic, cam_poses[j])
-            depth = tsdf.get_heightmap()
+            # depth = tsdf.get_heightmap()
             # tsdf.write_mesh('out_%s.ply' % i, *tsdf.compute_mesh(step_size=2))
-            if args.model_used == 'cpn':
-                pos, rot, quat, cp1, cp2 = cpn_predict(tsdf, cpn, pg, cfg)
-            else:
-                use_rn = False
-                if args.model_used == 'rn':
-                    use_rn = True
-                panda_gripper_mesh = trimesh.load_mesh(args.vpn_panda_mesh)
-                gpr_pts = torch.from_numpy(panda_gripper_mesh.vertices.astype(np.float32)).to(device)
-                pos, rot, quat = vpn_predict(tsdf, vpn, dg, rn, gpr_pts, device, use_rn=use_rn)
+
+            pos, rot, quat, cp1, cp2 = cpn_predict(tsdf, cpn, pg, cfg)
+
             if pos is None:
                 t = time['up'] + 20
                 continue_num += 1
@@ -700,7 +675,7 @@ while True:
             # grasps_widths.append(width)
             tsdf.reset()
 
-            if not args.headless and args.model_used == 'cpn':
+            if not args.headless:
                 gp = gymapi.Transform()
                 gp.p = gymapi.Vec3(grasp_poses[-1][0], grasp_poses[-1][1], grasp_poses[-1][2])
                 gp.r = gymapi.Quat(grasp_quats[-1][0], grasp_quats[-1][1], grasp_quats[-1][2], grasp_quats[-1][3])
@@ -802,7 +777,7 @@ while True:
         break
 print('Done')
 txt = np.array([succ, count]).astype(np.int)
-path = '../log/%s'%args.model_used
+path = '../log/cpn'
 if not os.path.exists(path):
     os.makedirs(path)
 name = ['primitive', 'random', 'kit']
@@ -810,3 +785,5 @@ np.savetxt(path+'/%s_%s_%s.txt'%(name[args.obj_type], num_objects, args.idx), tx
 if not args.headless:
     gym.destroy_viewer(viewer)
 gym.destroy_sim(sim)
+bb=tt.time()
+print('time cost:{:0.2f} min'.format((bb-aa)/60))
