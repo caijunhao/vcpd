@@ -18,20 +18,11 @@ def tsdf_node():
     # initialize ros
     rospy.init_node('tsdf_node', anonymous=True)
     # initialize realsense
-    if cfg('advanced'):
-        dev = rs.context().query_devices()[0]
-        advnc_mode = rs.rs400_advanced_mode(dev)
-        depth_table_control_group = advnc_mode.get_depth_table()
-        depth_table_control_group.disparityShift = cfg('disparity_shift')
-        advnc_mode.set_depth_table(depth_table_control_group)
-        rospy.loginfo('set disparity shift to {} in advanced mode'.format(cfg('disparity_shift')))
     pipeline = rs.pipeline()
     config = rs.config()
     config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, cfg('fps'))
     config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, cfg('fps'))
     profile = pipeline.start(config)
-    # depth_sensor = profile.get_device().first_depth_sensor()
-    # depth_sensor.set_option(rs.option.visual_preset, 3)  # 3: High Accuracy
     depth_profile = rs.video_stream_profile(profile.get_stream(rs.stream.depth))
     color_profile = rs.video_stream_profile(profile.get_stream(rs.stream.color))
     if cfg('aligned'):
@@ -89,12 +80,10 @@ def tsdf_node():
                 rospy.logwarn('no depth frame received')
                 continue
             depth = np.asanyarray(depth_frame.get_data())
-            color = np.asanyarray(color_frame.get_data()) if cfg('use_color') else None
+            color = np.asanyarray(color_frame.get_data())[..., ::-1].copy() if cfg('use_color') else None
             m_base2cam = sc.m_base2ee @ t_ee2cam()
             zero_flag = np.logical_or(depth < 100, depth > 1000)  # depth value is always smaller than 1000 in our task
             depth = depth / 1000.0
-            if cfg('noise_model'):
-                depth = depth + np.exp(cfg('a0') * depth ** 2 + cfg('a1') * depth + cfg('a2'))
             depth[zero_flag] = 0.0
             sc.tsdf_integrate(depth, intrinsic, m_base2cam, rgb=color)
             rospy.loginfo("latest frame processed...")

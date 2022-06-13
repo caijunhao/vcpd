@@ -53,7 +53,15 @@ def panda_node():
         tsdf_enable_pub.publish(false)
         pos, quat, width = pgpp.get()
         rot = quaternion.as_rotation_matrix(quat)
+        if pos[2] < 0.17:
+            z = np.array([0, 0, -1])
+            y = rot[:, 1] - rot[:, 1] @ z * z
+            y = y / np.linalg.norm(y)
+            x = np.cross(y, z)
+            rot = np.stack([x, y, z], axis=-1)
+            quat = quaternion.from_rotation_matrix(rot)
         pre_pos = pos - rot[:, 2] * cfg('ee_offset')
+        pos = pos + rot[:, 2] * 0.01
         ori_error = 1
         while ori_error > 0.005 and not pc.error:
             pc.vel_ctl(pre_pos, quat, ori_ctl=True)

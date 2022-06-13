@@ -15,6 +15,7 @@ import numpy as np
 import torch
 import argparse
 import json
+import time
 import os
 
 
@@ -29,7 +30,7 @@ def main(args):
     p.connect(mode, options='--background_color_red=1.0 --background_color_green=1.0 --background_color_blue=1.0')
     p.setGravity(0, 0, -9.8)
     p.configureDebugVisualizer(p.COV_ENABLE_GUI, 0)
-    p.resetDebugVisualizerCamera(cameraDistance=0.37, cameraYaw=0, cameraPitch=-70, cameraTargetPosition=[0, 0, 0])
+    p.resetDebugVisualizerCamera(cameraDistance=0.43, cameraYaw=0, cameraPitch=-70, cameraTargetPosition=[0, 0, 0])
     p.setAdditionalSearchPath(pybullet_data.getDataPath())
     plane_id = p.loadURDF('plane.urdf')
     # scene initialization

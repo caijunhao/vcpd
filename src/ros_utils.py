@@ -114,7 +114,7 @@ class SDFCommander(object):
     def save_mesh(self, name='out.ply'):
         if self.valid_flag:
             self.sdf_lock.acquire()
-            v, f, n, rgb = self.tsdf.compute_mesh(step_size=2)
+            v, f, n, rgb = self.tsdf.compute_mesh(step_size=1)
             self.sdf_lock.release()
             self.tsdf.write_mesh(name, v, f, n, rgb)
         else:
@@ -232,7 +232,7 @@ class CPNCommander(object):
         sdf_volume = self.request_a_volume()
         self.tsdf.sdf_vol = torch.from_numpy(sdf_volume).to(self.device)
         try:
-            cp1, cp2 = sample_contact_points(self.tsdf, post_processed=False, gaussian_blur=False)
+            cp1, cp2 = sample_contact_points(self.tsdf, post_processed=False, gaussian_blur=False, step_size=1)
         except ValueError:
             rospy.logwarn('cannot find level set from the volume, try next one')
             return None
