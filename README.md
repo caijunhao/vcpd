@@ -1,8 +1,12 @@
 ## Volumetric-based Contact Point Detection for 7-DoF Grasping
 
+---
+
 This repository contains the implementation of the work "Volumetric-based Contact Point Detection for 7-DoF Grasping", 
-including data generation, network training, performance validation on simulator, and ros scripts to perform real robot 
+including data generation, network training, performance validation on simulator, and ros scripts to perform real-robot 
 grasping. 
+
+---
 
 ### Data Generation
 
@@ -25,7 +29,7 @@ Each URDF folder contains four files. One example is listed below:
     -cube#0.010#0.010#0.080_vis.obj  // the mesh used for visualization
     -cube#0.010#0.010#0.080.urdf  // the URDF description file
 ```
-Currently, only [kit](), [random_urdfs](), [block](), and [primitive]() are supported to be converted to URDF.
+Some meshes and the corresponding URDFs can be found at [here](https://hkustconnect-my.sharepoint.com/:f:/g/personal/jcaiaq_connect_ust_hk/Eg4f-0GgktJPlkdMo5bmIbsBto0S8kOQohsltrZz7ZwujA?e=h6UEg9).
 
 #### Step 2: antipodal analysis on single mesh. 
 
@@ -66,6 +70,8 @@ python scripts/data_collection/scene_construction.py \
 ```
 ${NUM_OBJ} is determined according to the number of objects stacked in the tray, which is configurated 
 by ```scene/obj``` tag in ```config.json```.
+
+---
 
 ### Network Training
 
@@ -111,6 +117,8 @@ python scripts/cpn/train_cpn.py \
 --test_dir $PATH_TO_TEST \
 ```
 
+---
+
 ### Performance Evaluation
 
 #### Evaluate antipodal score and collision-free rate
@@ -123,7 +131,24 @@ python scripts/cpn/test_cpn.py \
 
 #### Data
 
-[Pretrained models](https://hkustconnect-my.sharepoint.com/:f:/g/personal/jcaiaq_connect_ust_hk/Egf_m9udMs9Pgy34wfeLqtMBYU6KY25VV1TOSDHQHtb1lw?e=4vP8Hk) for [VPN](https://ieeexplore.ieee.org/document/9681231)
+[Scene data](https://hkustconnect-my.sharepoint.com/:f:/g/personal/jcaiaq_connect_ust_hk/Eg4f-0GgktJPlkdMo5bmIbsBto0S8kOQohsltrZz7ZwujA?e=h6UEg9)
 
-[OneDrive link for this project](https://hkustconnect-my.sharepoint.com/:f:/g/personal/jcaiaq_connect_ust_hk/Eo5TOqm2IeBBgcbXd4MlLyYBcAf-cf4ESTS7wgOeRCTeNA?e=A4vGKx)
+---
 
+### License
+
+The codebase and dataset are under **CC BY-NC-SA 3.0 license**. You may only use the code and data for academic purposes.
+
+---
+
+### Citation
+If you find our work useful, please consider citing.
+```
+@inproceedings{cai2022volumetric,
+    title     = {Volumetric-based Contact Point Detection for 7-DoF Grasping},
+    author    = {Cai, Junhao and Su, Jingcheng and Zhou, Zida and Cheng, Hui and Chen, Qifeng and Wang, Michael Yu},
+    booktitle={Conference on Robot Learning (CoRL)},
+    year={2022},
+    organization={PMLR}
+}
+```
