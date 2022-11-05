@@ -200,8 +200,8 @@ class SDFCommander(object):
 class CPNCommander(object):
     def __init__(self, volume_bounds, voxel_length, model, gripper_points, gripper_depth, device):
         self.cpn = model
-        resolution = np.ceil((volume_bounds[1] - volume_bounds[0] - voxel_length / 7) / voxel_length).astype(np.int)
-        self.sdf = TSDF(volume_bounds, resolution, voxel_length, device=device)
+        resolution = np.ceil((volume_bounds[1] - volume_bounds[0] - voxel_length / 7) / voxel_length)
+        self.sdf = TSDF(volume_bounds[0], resolution, voxel_length, device=device)
         self.device = device
         self.trigger_flag = False
         self.gpr_pts = gripper_points  # Nx3-d torch tensor

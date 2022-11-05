@@ -51,7 +51,7 @@ def tsdf_node():
     c_y = cfg('c_y_aligned') if cfg('aligned') else cfg('c_y')
     vol_bnd = np.array([[cfg('c_x')-cfg('sdf_h')/2*vl, c_y-cfg('sdf_w')/2*vl, cfg('c_z')-cfg('sdf_d')/2*vl],
                         [cfg('c_x')+cfg('sdf_h')/2*vl, c_y+cfg('sdf_w')/2*vl, cfg('c_z')+cfg('sdf_d')/2*vl]])
-    resolution = np.ceil((vol_bnd[1] - vol_bnd[0] - vl / 7) / vl).astype(np.int)
+    resolution = np.ceil((vol_bnd[1] - vol_bnd[0] - vl / 7) / vl)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if device == 'cpu':
         rospy.logwarn('no gpu found, use cpu for sdf instead')
