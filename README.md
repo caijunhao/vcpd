@@ -1,10 +1,15 @@
 ## Volumetric-based Contact Point Detection for 7-DoF Grasping
 
----
-
 This repository contains the implementation of the work "Volumetric-based Contact Point Detection for 7-DoF Grasping", 
 including data generation, network training, performance validation on simulator, and ros scripts to perform real-robot 
 grasping. 
+
+<div align="center">
+    <img src="doc/pipeline.jpg"/>
+ </div>
+ <center> Overview of the grasp pipeline.</center>
+
+[**Paper**](https://openreview.net/forum?id=SrSCqW4dq9), [**Video**](https://youtu.be/MnVZWRv_n6U)
 
 ---
 
@@ -129,7 +134,9 @@ python scripts/cpn/test_cpn.py \
 --model_path $PATH_TO_MODEL/cpn_xxx.pth
 ```
 
-#### Data
+---
+
+### Data
 
 [Scene data](https://hkustconnect-my.sharepoint.com/:f:/g/personal/jcaiaq_connect_ust_hk/Eg4f-0GgktJPlkdMo5bmIbsBto0S8kOQohsltrZz7ZwujA?e=h6UEg9)
 
