@@ -43,7 +43,7 @@ With the mesh set in URDF format, we generate contact pairs with grasp labels fo
 python scripts/data_collection/grasp_analysis.py \ 
 --mesh_path $PATH_TO_URDF_FOLDER \ 
 --config config/config.json \ 
---output ${PATH_TO_GRASP_LABEL}/${MESH_TYPE}_grasp_info \ 
+--output ${PATH_TO_GRASP_LABEL}/${MESH_TYPE}_grasp_info 
 --gui 0
 ```
 For example, the output files of ```cube#0.010#0.010#0.080``` include
@@ -119,7 +119,7 @@ python scripts/cpn/train_cpn.py \
 --config config/config.json \ 
 --log $PATH_TO_MODEL \ 
 --train_dir $PATH_TO_TRAIN \ 
---test_dir $PATH_TO_TEST \
+--test_dir $PATH_TO_TEST 
 ```
 
 ---
@@ -159,3 +159,6 @@ If you find our work useful, please consider citing.
     organization={PMLR}
 }
 ```
+
+### Acknowledgement
+The implementation the SDF is inspired by Andy Zeng's [tsdf-fusion-python](https://github.com/andyzeng/tsdf-fusion-python).
