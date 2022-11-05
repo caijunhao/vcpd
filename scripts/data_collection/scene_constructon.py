@@ -2,7 +2,7 @@ from sim.utils import *
 from sim.objects import PandaGripper, RigidObject
 from sim.camera import Camera
 from sim.tray import Tray
-from sdf import SDF
+from sdf import TSDF, PSDF, GradientSDF
 from scipy.spatial.transform import Rotation
 from skimage import io
 import matplotlib.pyplot as plt
@@ -88,14 +88,15 @@ def main(args):
     mesh_list = os.listdir(args.mesh)
     angles = np.arange(cfg['num_angle']) / cfg['num_angle'] * 2 * np.pi
     basic_rot_mats = np.expand_dims(basic_rot_mat(angles, 'y'), axis=0)  # 1*num_angle*3*3
-    # tsdf initialization
+    # sdf initialization
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    voxel_length = cfg['sdf']['voxel_length']
     vol_bnd = np.array([cfg['sdf']['x_min'], cfg['sdf']['y_min'], cfg['sdf']['z_min'],
-                        cfg['sdf']['x_max'], cfg['sdf']['y_max'], cfg['sdf']['z_max']], dtype=nf32).reshape(2, 3)
-    resolution = cfg['sdf']['resolution']
-    tsdf = SDF(vol_bnd, resolution, rgb=False, device=device)
-    tsdf2 = SDF(vol_bnd, resolution, rgb=False, device=device)
-    vol_bnd = tsdf.vol_bnd
+                        cfg['sdf']['x_max'], cfg['sdf']['y_max'], cfg['sdf']['z_max']]).reshape(2, 3)
+    origin = vol_bnd[0]
+    resolution = np.ceil((vol_bnd[1] - vol_bnd[0] - voxel_length / 7) / voxel_length).astype(np.int)
+    sdf = TSDF(origin, resolution, voxel_length, fuse_color=True, device=device)
+    sdf2 = TSDF(origin, resolution, voxel_length, fuse_color=False, device=device)
     i = 0
     while i < cfg['scene']['trial']:
         info_dict = dict()
@@ -256,23 +257,23 @@ def main(args):
                 raise ValueError('only sphere or cube sampling methods are supported')
         e = time.time()
         print('elapse time on scene rendering: {}s'.format(e - b))
-        # tsdf generation
+        # sdf generation
         sdf_path = os.path.join(args.output, '{:06d}'.format(i))
         discard = False
         if args.sdf:
             for ri, di, pi, ii, idx in zip(rgb_list, depth_list, pose_list, intr_list, range(len(intr_list))):
                 os.makedirs(sdf_path) if not os.path.exists(sdf_path) else None
                 ri, ndi = ri[..., 0:3], cam.add_noise(di)
-                tsdf.integrate(ndi, ii, pi, rgb=ri)
-                tsdf2.integrate(di, ii, pi, rgb=ri)
+                sdf.integrate(ndi, ii, pi, rgb=ri)
+                sdf2.integrate(di, ii, pi, rgb=ri)
                 if idx in cfg['sdf']['save_volume']:
-                    sdf_cp1 = tsdf2.extract_sdf(contact_pts1, gaussian_blur=False).cpu().numpy()
-                    sdf_cp2 = tsdf2.extract_sdf(contact_pts2, gaussian_blur=False).cpu().numpy()
+                    sdf_cp1 = sdf2.interpolation(contact_pts1, smooth=False).cpu().numpy()
+                    sdf_cp2 = sdf2.interpolation(contact_pts2, smooth=False).cpu().numpy()
                     th = 0.2
                     sdf_cp_flag = np.logical_and(np.abs(sdf_cp1) <= th, np.abs(sdf_cp2) <= th)
                     val_pts1, val_pts2 = contact_pts1[sdf_cp_flag], contact_pts2[sdf_cp_flag]
-                    sdf_ncp1 = tsdf2.extract_sdf(neg_pts1, gaussian_blur=False).cpu().numpy()
-                    sdf_ncp2 = tsdf2.extract_sdf(neg_pts2, gaussian_blur=False).cpu().numpy()
+                    sdf_ncp1 = sdf2.interpolation(neg_pts1, smooth=False).cpu().numpy()
+                    sdf_ncp2 = sdf2.interpolation(neg_pts2, smooth=False).cpu().numpy()
                     sdf_ncp_flag = np.logical_and(np.abs(sdf_ncp1) <= th, np.abs(sdf_ncp2) <= th)
                     val_n_pts1, val_n_pts2 = neg_pts1[sdf_ncp_flag], neg_pts2[sdf_ncp_flag]
                     num_cp = val_pts1.shape[0]
@@ -284,23 +285,23 @@ def main(args):
                         break
                     else:
                         if cfg['sdf']['gaussian_blur']:
-                            sdf_vol = tsdf.gaussian_blur(tsdf.post_processed_volume)
+                            sdf_vol = sdf.gaussian_smooth(sdf.post_processed_vol)
                         else:
-                            sdf_vol = tsdf.post_processed_volume
+                            sdf_vol = sdf.post_processed_vol
                         sdf_vol_cpu = sdf_vol.cpu().numpy()
                         np.save(os.path.join(sdf_path, '{:04d}_pos_contact1.npy'.format(idx)),
-                                tsdf.get_ids(val_pts1).cpu().numpy())
+                                sdf.get_ids(val_pts1).cpu().numpy())
                         np.save(os.path.join(sdf_path, '{:04d}_pos_contact2.npy'.format(idx)),
-                                tsdf.get_ids(val_pts2).cpu().numpy())
+                                sdf.get_ids(val_pts2).cpu().numpy())
                         np.save(os.path.join(sdf_path, '{:04d}_neg_contact1.npy'.format(idx)),
-                                tsdf.get_ids(val_n_pts1).cpu().numpy())
+                                sdf.get_ids(val_n_pts1).cpu().numpy())
                         np.save(os.path.join(sdf_path, '{:04d}_neg_contact2.npy'.format(idx)),
-                                tsdf.get_ids(val_n_pts2).cpu().numpy())
+                                sdf.get_ids(val_n_pts2).cpu().numpy())
                         np.save(os.path.join(sdf_path, '{:04d}_sdf_volume.npy'.format(idx)),
                                 sdf_vol_cpu)
         obj_info = [(o.obj_name, o.get_pose()) for o in static_list]
         np.save(os.path.join(sdf_path, '{:06d}_obj_info.npy'.format(i)), np.asanyarray(obj_info, dtype=object))
-        sdf_info = {'voxel_length': tsdf.res,
+        sdf_info = {'voxel_length': cfg['sdf']['voxel_length'],
                     'origin': vol_bnd[0].tolist()}
         with open(os.path.join(sdf_path, '{:06d}_sdf_info.json'.format(i)), 'w') as fo:
             json.dump(sdf_info, fo, indent=4)
@@ -308,12 +309,12 @@ def main(args):
         [p.removeBody(o.obj_id) for o in dynamic_list]
         [p.removeBody(o.obj_id) for o in static_list]
         p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
-        v, f, n, c = tsdf.compute_mesh(step_size=3)
+        v, f, n, c = sdf.marching_cubes(step_size=3)
         m = trimesh.Trimesh(vertices=v, faces=f, vertex_normals=n, vertex_colors=c)
         m.export(os.path.join(sdf_path, '{:06d}_mesh.obj'.format(i)))
-        # tsdf.write_mesh(os.path.join(sdf_path, '{:06d}_mesh.ply'.format(i)), v, f, n, c)
-        tsdf.reset()
-        tsdf2.reset()
+        # sdf.write_mesh(os.path.join(sdf_path, '{:06d}_mesh.ply'.format(i)), v, f, n, c)
+        sdf.reset()
+        sdf2.reset()
         if discard:
             continue
         i += 1
@@ -353,7 +354,7 @@ if __name__ == '__main__':
                         default=0,
                         help='choose 0 for DIRECT mode and 1 (or others) for GUI mode.')
     parser.add_argument('--cuda_device',
-                        default='1',
+                        default='0',
                         type=str,
                         help='id of nvidia device.')
     main(parser.parse_args())

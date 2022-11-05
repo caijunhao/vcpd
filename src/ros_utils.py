@@ -2,8 +2,7 @@ from vcpd.srv import RequestVolume, RequestVolumeRequest, RequestVolumeResponse,
 from vcpd.msg import Volume, GripperPose
 from franka_msgs.msg import ErrorRecoveryActionGoal
 from cpn.utils import sample_contact_points, select_gripper_pose, clustering
-from sdf import SDF
-from scipy.spatial.transform import Rotation
+from sdf import TSDF, PSDF, GradientSDF
 from sensor_msgs.msg import PointCloud2, PointField
 from geometry_msgs.msg import Pose
 import quaternion
@@ -53,8 +52,8 @@ class Transform(object):
 
 
 class SDFCommander(object):
-    def __init__(self, tsdf, pcl_pub):
-        self.tsdf = tsdf
+    def __init__(self, sdf, pcl_pub):
+        self.sdf = sdf
         self.pcl_pub = pcl_pub
 
         self.t_base2ee = None  # current pose from base frame to O_T_EE
@@ -81,7 +80,7 @@ class SDFCommander(object):
         """
         self.start_flag = msg.data
         if self.start_flag:
-            rospy.loginfo("flag received, now start processing tsdf")
+            rospy.loginfo("flag received, now start processing sdf")
         else:
             rospy.loginfo("flag received, pause processing")
 
@@ -90,23 +89,23 @@ class SDFCommander(object):
         :param msg: vpn/Bool.msg
         """
         self.save_flag = msg.data
-        rospy.loginfo("flag received, generate mesh from tsdf and save to the disk")
+        rospy.loginfo("flag received, generate mesh from sdf and save to the disk")
 
     def callback_reset(self, msg):
         """
         :param msg: vpn/Bool.msg
         """
         self.reset_flag = msg.data
-        rospy.loginfo("flag received, re-initialize tsdf")
+        rospy.loginfo("flag received, re-initialize sdf")
 
     def tsdf_integrate(self, depth, intrinsic, m_base2cam, rgb):
         self.sdf_lock.acquire()
-        self.tsdf.integrate(depth, intrinsic, m_base2cam, rgb=rgb)
+        self.sdf.integrate(depth, intrinsic, m_base2cam, rgb=rgb)
         self.sdf_lock.release()
 
     def reset(self):
         self.sdf_lock.acquire()
-        self.tsdf.reset()
+        self.sdf.reset()
         self.reset_flag = False
         self.valid_flag = False
         self.sdf_lock.release()
@@ -114,9 +113,9 @@ class SDFCommander(object):
     def save_mesh(self, name='out.ply'):
         if self.valid_flag:
             self.sdf_lock.acquire()
-            v, f, n, rgb = self.tsdf.compute_mesh(step_size=1)
+            v, f, n, rgb = self.sdf.marching_cubes(step_size=1)
             self.sdf_lock.release()
-            self.tsdf.write_mesh(name, v, f, n, rgb)
+            self.sdf.write_mesh(name, v, f, n, rgb)
         else:
             rospy.logwarn('no visual data is merged into the volume currently, '
                           'no mesh will be saved at this moment.')
@@ -127,12 +126,12 @@ class SDFCommander(object):
             rospy.sleep(0.01)
         self.sdf_lock.acquire()
         if req.post_processed:
-            sdf_volume = self.tsdf.post_processed_volume
+            sdf_volume = self.sdf.post_processed_vol
         else:
-            sdf_volume = self.tsdf.sdf_volume
+            sdf_volume = self.sdf.sdf_vol
         self.sdf_lock.release()
         if req.gaussian_blur:
-            sdf_volume = self.tsdf.gaussian_blur(sdf_volume)
+            sdf_volume = self.sdf.gaussian_smooth(sdf_volume)
         sdf_volume = sdf_volume.cpu().numpy()
         volume_msg = Volume()
         volume_msg.height, volume_msg.width, volume_msg.depth = sdf_volume.shape
@@ -146,7 +145,9 @@ class SDFCommander(object):
             return
         if msg.data:
             # self.sdf_lock.acquire()
-            xyz_rgb = self.tsdf.compute_pcl(use_post_processed=True, gaussian_blur=True)
+            xyz, rgb = self.sdf.compute_pcl(use_post_processed=True, smooth=True)
+            rgb = rgb.to(xyz.dtype)
+            xyz_rgb = torch.cat([xyz, rgb], dim=1)
             # self.sdf_lock.release()
             xyz_rgb = xyz_rgb.cpu().numpy()
             pcl2msg = self.array_to_pointcloud2(xyz_rgb)
@@ -197,11 +198,10 @@ class SDFCommander(object):
 
 
 class CPNCommander(object):
-    def __init__(self, volume_bounds, resolution, model, gripper_points, gripper_depth, device):
+    def __init__(self, volume_bounds, voxel_length, model, gripper_points, gripper_depth, device):
         self.cpn = model
-        self.tsdf = SDF(volume_bounds, resolution, device=device)
-        self.volume_bounds = volume_bounds
-        self.resolution = resolution
+        resolution = np.ceil((volume_bounds[1] - volume_bounds[0] - voxel_length / 7) / voxel_length).astype(np.int)
+        self.sdf = TSDF(volume_bounds, resolution, voxel_length, device=device)
         self.device = device
         self.trigger_flag = False
         self.gpr_pts = gripper_points  # Nx3-d torch tensor
@@ -230,28 +230,27 @@ class CPNCommander(object):
 
     def inference(self):
         sdf_volume = self.request_a_volume()
-        self.tsdf.sdf_vol = torch.from_numpy(sdf_volume).to(self.device)
+        self.sdf.sdf_vol = torch.from_numpy(sdf_volume).to(self.device)
         try:
-            cp1, cp2 = sample_contact_points(self.tsdf, post_processed=False, gaussian_blur=False, step_size=1)
+            cp1, cp2 = sample_contact_points(self.sdf, post_processed=False, gaussian_blur=False, step_size=1)
         except ValueError:
             rospy.logwarn('cannot find level set from the volume, try next one')
             return None
         if cp1.shape[0] == 0:
             rospy.logwarn('cannot find potential contact points')
             return None
-        ids_cp1, ids_cp2 = self.tsdf.get_ids(cp1), self.tsdf.get_ids(cp2)
+        ids_cp1, ids_cp2 = self.sdf.get_ids(cp1), self.sdf.get_ids(cp2)
         sample = dict()
-        sample['sdf_volume'] = self.tsdf.sdf_vol.unsqueeze(dim=0).unsqueeze(dim=0)
+        sample['sdf_volume'] = self.sdf.sdf_vol.unsqueeze(dim=0).unsqueeze(dim=0)
         sample['ids_cp1'] = ids_cp1.permute((1, 0)).unsqueeze(dim=0).unsqueeze(dim=-1)
         sample['ids_cp2'] = ids_cp2.permute((1, 0)).unsqueeze(dim=0).unsqueeze(dim=-1)
         out = torch.squeeze(self.cpn.forward(sample))
         if out.shape[0] == 0:
             rospy.logwarn('output size is zero')
             return None
-        gripper_pos, rot, width, cp1, cp2 = select_gripper_pose(self.tsdf, self.gpr_pts,
-                                                                out, cp1, cp2, self.gpr_d,
-                                                                check_tray=False,
-                                                                post_processed=False, gaussian_blur=False)
+        gripper_pos, rot, width, cp1, cp2 = select_gripper_pose(self.sdf, self.gpr_pts, out, cp1, cp2, self.gpr_d,
+                                                                check_tray=False, post_processed=False,
+                                                                gaussian_blur=False)
         gripper_pos, rot, width, cp1, cp2 = clustering(gripper_pos, rot, width, cp1, cp2)
         msg = self.pose2msg(cp1, cp2, rot, width)
         return msg

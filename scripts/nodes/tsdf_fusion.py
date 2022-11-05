@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-from sdf import SDF
+from sdf import TSDF, PSDF, GradientSDF
 from ros_utils import SDFCommander, Transform
 from ros_utils import from_rs_intr_to_mat
 from vcpd.srv import RequestVolume
@@ -46,24 +46,25 @@ def tsdf_node():
         t_ee2cam = Transform(rospy.get_param('p_ee2cam_aligned'))
     else:
         t_ee2cam = Transform(rospy.get_param('p_ee2cam'))
-    # tsdf initialization
+    # sdf initialization
     vl = cfg('voxel_length')
     c_y = cfg('c_y_aligned') if cfg('aligned') else cfg('c_y')
     vol_bnd = np.array([[cfg('c_x')-cfg('sdf_h')/2*vl, c_y-cfg('sdf_w')/2*vl, cfg('c_z')-cfg('sdf_d')/2*vl],
                         [cfg('c_x')+cfg('sdf_h')/2*vl, c_y+cfg('sdf_w')/2*vl, cfg('c_z')+cfg('sdf_d')/2*vl]])
+    resolution = np.ceil((vol_bnd[1] - vol_bnd[0] - vl / 7) / vl).astype(np.int)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if device == 'cpu':
-        rospy.logwarn('no gpu found, use cpu for tsdf instead')
-    tsdf = SDF(vol_bnd, vl, rgb=True, device=device)
-    pcl_pub = rospy.Publisher("/tsdf/pcl", PointCloud2, queue_size=1)
+        rospy.logwarn('no gpu found, use cpu for sdf instead')
+    sdf = TSDF(vol_bnd[0], resolution, vl, fuse_color=True, device=device)
+    pcl_pub = rospy.Publisher("/sdf/pcl", PointCloud2, queue_size=1)
     # add threading lock to avoid refreshing the buffer while reading at the same time
-    sc = SDFCommander(tsdf, pcl_pub)
+    sc = SDFCommander(sdf, pcl_pub)
     # subscribe topics
     _ = rospy.Subscriber('/ee_pose', EEPose, sc.callback_t_base2ee, queue_size=1)
-    _ = rospy.Subscriber("/tsdf/enable", Bool, sc.callback_enable)
-    _ = rospy.Subscriber("/tsdf/reset", Bool, sc.callback_reset)
-    _ = rospy.Subscriber("/tsdf/save", Bool, sc.callback_save)
-    _ = rospy.Subscriber("/tsdf/pub_pcl", Bool, sc.callback_pcl)
+    _ = rospy.Subscriber("/sdf/enable", Bool, sc.callback_enable)
+    _ = rospy.Subscriber("/sdf/reset", Bool, sc.callback_reset)
+    _ = rospy.Subscriber("/sdf/save", Bool, sc.callback_save)
+    _ = rospy.Subscriber("/sdf/pub_pcl", Bool, sc.callback_pcl)
     # add service to transmit sdf volume
     s = rospy.Service('request_a_volume', RequestVolume, sc.handle_send_tsdf_volume)
     rospy.loginfo('tsdf_node is ready')

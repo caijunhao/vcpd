@@ -16,7 +16,7 @@ jnt_vals:
   - 1.51733775
   - 0.79647267
 
-arm_speed: 0.05
+arm_speed: 0.1
 vel_rate: 100
 min_height: 0.37
 ee_offset: 0.07  # distance between the target grasp pose and the pre-grasp pose

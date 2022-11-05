@@ -66,7 +66,7 @@
         "z_max": 0.297,
         "add_noise": true,
         "gaussian_blur": true,
-        "resolution": 0.003,
+        "voxel_length": 0.003,
         "save_volume": [5, 10, 14, 19]
     },
     "train":

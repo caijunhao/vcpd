@@ -21,9 +21,9 @@ def panda_node():
     pc.movej(cfg('jnt_vals'))
     pc.gripper.grasp(0.085, 0, 0.05)
     drop_pos = [-1.5427169, -0.70545206, 1.95252443, -1.28864723, 0.64465563, 1.59058326, 1.28369785]
-    tsdf_enable_pub = rospy.Publisher('/tsdf/enable', Bool, queue_size=1)
-    tsdf_reset_pub = rospy.Publisher('/tsdf/reset', Bool, queue_size=1)
-    tsdf_save_pub = rospy.Publisher('/tsdf/save', Bool, queue_size=1)
+    tsdf_enable_pub = rospy.Publisher('/sdf/enable', Bool, queue_size=1)
+    tsdf_reset_pub = rospy.Publisher('/sdf/reset', Bool, queue_size=1)
+    tsdf_save_pub = rospy.Publisher('/sdf/save', Bool, queue_size=1)
     cpn_pub = rospy.Publisher('/cpn/flag', Bool, queue_size=1)
     true, false = Bool(True), Bool(False)
     rospy.sleep(0.5)

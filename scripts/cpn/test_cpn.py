@@ -6,7 +6,7 @@ from sim.objects import RigidObject, PandaGripper
 from sim.vis import rotate_gripper
 from sim.tray import Tray
 from sim.utils import *
-from sdf import SDF
+from sdf import TSDF, PSDF, GradientSDF
 import xml.etree.ElementTree as et
 import pymeshlab as ml
 import pybullet as p
@@ -48,15 +48,17 @@ def main(args):
         vertex_sets[component] = ms.current_mesh().vertex_matrix()
     pg.set_pose([-20, -20, -20], [0, 0, 0, 1])
     mesh_list = os.listdir(args.mesh)
-    # tsdf initialization
+    # sdf initialization
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     cpn = CPN()
     cpn.load_network_state_dict(device=device, pth_file=args.model_path)
     cpn.to(device)
+    voxel_length = cfg['sdf']['voxel_length']
     vol_bnd = np.array([cfg['sdf']['x_min'], cfg['sdf']['y_min'], cfg['sdf']['z_min'],
                         cfg['sdf']['x_max'], cfg['sdf']['y_max'], cfg['sdf']['z_max']]).reshape(2, 3)
-    voxel_length = cfg['sdf']['resolution']
-    tsdf = SDF(vol_bnd, voxel_length, rgb=False, device=device)
+    origin = vol_bnd[0]
+    resolution = np.ceil((vol_bnd[1] - vol_bnd[0] - voxel_length / 7) / voxel_length).astype(np.int)
+    sdf = TSDF(origin, resolution, voxel_length, fuse_color=False, device=device)
     i = 0
     avg_anti_score = 0.0
     col_free_rate = 0.0
@@ -139,17 +141,16 @@ def main(args):
             ri = ri[..., 0:3].astype(np.float32)
             di = cam.add_noise(di).astype(np.float32)
             pi, ii = pi.astype(np.float32), ii.astype(np.float32)
-            tsdf.integrate(di, ii, pi, rgb=ri)
-        cp1, cp2 = sample_contact_points(tsdf)
-        ids_cp1, ids_cp2 = tsdf.get_ids(cp1), tsdf.get_ids(cp2)
+            sdf.integrate(di, ii, pi, rgb=ri)
+        cp1, cp2 = sample_contact_points(sdf)
+        ids_cp1, ids_cp2 = sdf.get_ids(cp1), sdf.get_ids(cp2)
         sample = dict()
-        sample['sdf_volume'] = tsdf.gaussian_blur(tsdf.post_processed_volume).unsqueeze(dim=0).unsqueeze(dim=0)
+        sample['sdf_volume'] = sdf.gaussian_smooth(sdf.post_processed_vol).unsqueeze(dim=0).unsqueeze(dim=0)
         sample['ids_cp1'] = ids_cp1.permute((1, 0)).unsqueeze(dim=0).unsqueeze(dim=-1)
         sample['ids_cp2'] = ids_cp2.permute((1, 0)).unsqueeze(dim=0).unsqueeze(dim=-1)
         out = torch.squeeze(cpn.forward(sample))
-        gripper_pos, rot, width, cp1, cp2 = select_gripper_pose(tsdf, vertex_sets,
-                                                                out, cp1, cp2, cfg['gripper']['depth'],
-                                                                check_tray=False)
+        gripper_pos, rot, width, cp1, cp2 = select_gripper_pose(sdf, vertex_sets, out, cp1, cp2,
+                                                                cfg['gripper']['depth'], check_tray=False)
         # debug: uncomment for visualization
         # visualize_contacts(cp1.cpu().numpy(), cp2.cpu().numpy(), num_vis=777)
         # /debug
@@ -171,7 +172,7 @@ def main(args):
         # visualize_contact(contact1, normal1, contact2, normal2)
         # closest_obj.change_color()
         # /debug
-        # tsdf.write_mesh('out.ply', *tsdf.compute_mesh(step_size=1))
+        # sdf.write_mesh('out.ply', *sdf.compute_mesh(step_size=1))
         print('current antipodal score: {:04f} given {} view(s)'.format(curr_anti_score, len(intr_list)))
         col = pg.is_collided(tray.get_tray_ids())  # , show_col=True
         print('is collided: {}'.format(col))
@@ -184,7 +185,7 @@ def main(args):
         [p.removeBody(o.obj_id) for o in dynamic_list]
         [p.removeBody(o.obj_id) for o in static_list]
         p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
-        tsdf.reset()
+        sdf.reset()
         cam.randomize_fov()
         i += 1
 

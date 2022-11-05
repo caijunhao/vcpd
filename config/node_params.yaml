@@ -1,4 +1,4 @@
-# tsdf params
+# sdf params
 c_x: 0.4922  # center of the workspace in x-axis
 c_y: 0.0175  # center y of the workspace in y-axis
 c_y_aligned: 0.0325  # use c_y_aligned when aligning depth map to rgb image in rs
@@ -7,7 +7,7 @@ sdf_h: 128  # 0.384
 sdf_w: 128  # 0.384
 sdf_d: 96  # 0.288
 voxel_length: 0.003
-rate: 30  # the maximal fps for tsdf fusion
+rate: 30  # the maximal fps for sdf fusion
 
 # rs params
 aligned: true
@@ -15,7 +15,7 @@ advanced: advanced
 noise_model: true
 use_color: true
 disparity_shift: 24
-fps: 30  # the maximal fps for tsdf fusion
+fps: 30  # the maximal fps for sdf fusion
 # quadratic curve fitting parameters for realsense depth error model
 a0: -0.9607773699002962
 a1: -0.0102477134049761
