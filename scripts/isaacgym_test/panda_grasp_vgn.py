@@ -33,14 +33,13 @@ import json
 with open(args.config, 'r') as config_file:
     cfg = json.load(config_file)
 import sys
-sys.path.append('/home/amax_sjc/catkin_ws/src/vcpd')
-sys.path.append('/home/amax_sjc/catkin_ws/src/vcpd/src')
+# sys.path.append('/home/sujc/catkin_ws/src/vcpd')
+# sys.path.append('/home/sujc/catkin_ws/src/vcpd/src')
 from isaacgym import gymapi
 from isaacgym import gymtorch
 
 import math
 import numpy as np
-a=np.array([1,2])
 from scipy.spatial.transform import Rotation as R
 import torch
 from vgn.detection import VGN
@@ -176,7 +175,7 @@ def create_obj_assets(args):
 
     # egad objects
     elif type == 'egad' or type == 4:
-        asset_root = '/home/sujc/code/vcpd-master/data/train/train_urdf'
+        asset_root = '../data/egad_eval_urdf'
         asset_paths = []
         paths = os.listdir(asset_root)
         for path in paths:
@@ -417,7 +416,7 @@ for i in range(num_envs):
     panda_pose = gymapi.Transform()
     panda_pose.p = gymapi.Vec3(1, 1, 1)
     panda_pose.r = gymapi.Quat.from_euler_zyx(0, math.pi, 0)
-    a = R.from_euler('zyx', [np.pi, 0, 0]).as_matrix()
+    # a = R.from_euler('zyx', [np.pi, 0, 0]).as_matrix()
     gymapi.Quat()
     panda_handle = gym.create_actor(env, panda_asset, panda_pose, "panda_%s" % i, i, 0)
     panda_handles.append(panda_handle)
@@ -517,7 +516,7 @@ T_vol_base2origin = Transform(R.identity(), vol_bnd[0])
 low_res_tsdf = TSDFVolume(0.3, 40)
 high_res_tsdf = TSDFVolume(0.3, 120)
 
-voxel_length = cfg['sdf']['resolution']
+voxel_length = cfg['sdf']['voxel_length']
 vgn = VGN(Path(args.vgn_path))
 
 pg = PandaGripper('../../assets')
@@ -593,7 +592,7 @@ def visual_cpts(cp1s ,cp2s,sphere_geom_1s,sphere_geom_2s,env,clear=False):
         gymutil.draw_line(p1.p, p2.p, color, gym, viewer, env)
         gymutil.draw_lines(sphere_geom_1s, gym, viewer, env, p1)
         gymutil.draw_lines(sphere_geom_2s, gym, viewer, env, p2)
-
+continue_num = 0
 grasp_attempts = min(args.grasp_per_env, num_objects)
 while True:
     if not args.headless:
@@ -629,7 +628,6 @@ while True:
     gym.start_access_image_tensors(sim)
 
     if time['stable'] < t <= time['tsdf']:
-        print('start render')
         depth_s = []
         mass = []
         for i in range(num_envs):
@@ -658,7 +656,6 @@ while True:
                                                 len(cam_body_root_idxs))
 
     if t == time['tsdf']:
-        print('start tsdf integrate')
         for i in range(num_envs):
             for j in range(f):
                 m_base2cam = cam_poses[j]
@@ -672,7 +669,14 @@ while True:
             grasps, scores, planning_time = vgn(state)
             if len(grasps) == 0:
                 t = time['up'] + 20
-                continue
+                continue_num += 1
+                print('env %s ,continue %s'%(i, continue_num))
+                if continue_num == 2:
+                    pos = np.array([0,0,1])
+                    quat = np.array([1,0,0,0])
+                    rot = R.from_quat(quat).as_matrix()
+                else:
+                    continue
             grasp, score = select_grasp(grasps, scores)
             T_origin2grasp, width = grasp.pose, grasp.width
             T_base2grasp = T_vol_base2origin * T_origin2grasp
