@@ -536,12 +536,12 @@ time = {'stable': s,
         'down': s + f + d,
         'close': s + f + d + c,
         'up': s + f + d + c + u,
-        'away': s + f + d + c + u + a,
-        'shake_1': s + f + d + c + u + a + 1 * s_,
-        'shake_2': s + f + d + c + u + a + 2 * s_,
-        'shake_3': s + f + d + c + u + a + 3 * s_,
-        'shake_4': s + f + d + c + u + a + 4 * s_,
-        'open': s + f + d + 2 * c + u + a + 6 * s_,
+#         'away': s + f + d + c + u + a,
+#         'shake_1': s + f + d + c + u + a + 1 * s_,
+#         'shake_2': s + f + d + c + u + a + 2 * s_,
+#         'shake_3': s + f + d + c + u + a + 3 * s_,
+#         'shake_4': s + f + d + c + u + a + 4 * s_,
+#         'open': s + f + d + 2 * c + u + a + 6 * s_,
         }
 
 isaac_rot = np.array([[0, -1, 0, 0], [0, 0, -1, 0], [1, 0, 0, 0], [0, 0, 0, 1]])
