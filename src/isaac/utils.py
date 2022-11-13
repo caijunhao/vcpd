@@ -25,7 +25,7 @@ def vpn_predict(tsdf, vpn, dg, rn, gpr_pts, device, use_rn=False):
     from src.sim.utils import basic_rot_mat
 
     v, _, n, _ = tsdf.compute_mesh(step_size=2)
-    v, n = torch.from_numpy(v).to(device), torch.from_numpy(n).to(device)
+    v, n = torch.from_numpy(v).to(device).to(torch.float32), torch.from_numpy(n).to(device).to(torch.float32)
     ids = tsdf.get_ids(v)
     sample = dict()
     sample['sdf_volume'] = tsdf.gaussian_blur(tsdf.post_processed_volume).unsqueeze(dim=0).unsqueeze(dim=0)
@@ -35,7 +35,7 @@ def vpn_predict(tsdf, vpn, dg, rn, gpr_pts, device, use_rn=False):
     sample['occupancy_volume'] = torch.zeros_like(sample['sdf_volume'], device=device)
     sample['occupancy_volume'][sample['sdf_volume'] <= 0] = 1
     sample['origin'] = tsdf.origin
-    sample['resolution'] = torch.tensor([[tsdf.res]], dtype=torch.float32, device=device)
+    sample['resolution'] = torch.tensor([[tsdf.resolution]], dtype=torch.float32, device=device)
     out = torch.sigmoid(vpn.forward(sample))
     groups = rank_and_group_poses(sample, out, device, gpr_pts, collision_check=True)
     if groups is None:
@@ -58,8 +58,6 @@ def vpn_predict(tsdf, vpn, dg, rn, gpr_pts, device, use_rn=False):
             rot_recover = rot @ delta_rot
             approach_recover = rot_recover[:, 2]
             quat_recover = R.from_matrix(rot_recover).as_quat()
-            trans_recover = trans
-            # trans_recover[2] -= 0.005
             pos_recover = pose[0:3]
             pose = np.concatenate([pos_recover, -approach_recover, quat_recover])
         pos, rot0 = pose[0:3], R.from_quat(pose[6:10]).as_matrix()
@@ -71,14 +69,13 @@ def vpn_predict(tsdf, vpn, dg, rn, gpr_pts, device, use_rn=False):
 
 def cpn_predict(tsdf, cpn, pg, cfg):
     from cpn.utils import sample_contact_points, select_gripper_pose, clustering
-    cp1s, cp2s = sample_contact_points(tsdf, post_processed=True, gaussian_blur=True, start=0.01,
-                                       step_size=2)
+    cp1s, cp2s = sample_contact_points(tsdf)
     if len(cp1s) == 0:
         return None, None, None, None, None
     ids_cp1, ids_cp2 = tsdf.get_ids(cp1s), tsdf.get_ids(cp2s)
 
     sample = dict()
-    sample['sdf_volume'] = tsdf.gaussian_blur(tsdf.post_processed_volume).unsqueeze(dim=0).unsqueeze(dim=0)
+    sample['sdf_volume'] = tsdf.gaussian_smooth(tsdf.post_processed_vol).unsqueeze(dim=0).unsqueeze(dim=0)
     sample['ids_cp1'] = ids_cp1.permute((1, 0)).unsqueeze(dim=0).unsqueeze(dim=-1)
     sample['ids_cp2'] = ids_cp2.permute((1, 0)).unsqueeze(dim=0).unsqueeze(dim=-1)
     out = torch.squeeze(cpn.forward(sample))
