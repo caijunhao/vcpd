@@ -37,8 +37,8 @@ import json
 with open(args.config, 'r') as config_file:
     cfg = json.load(config_file)
 import sys
-sys.path.append('/home/amax_sjc/catkin_ws/src/vcpd')
-sys.path.append('/home/amax_sjc/catkin_ws/src/vcpd/src')
+# sys.path.append('/home/sujc/catkin_ws/src/vcpd')
+# sys.path.append('/home/sujc/catkin_ws/src/vcpd/src')
 from isaacgym import gymapi
 from isaacgym import gymtorch
 
@@ -46,7 +46,7 @@ import math
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 import torch
-from sdf import SDF
+
 from isaac.utils import get_tray, add_noise, PandaGripper
 import trimesh
 from vpn_sdf import TSDF
@@ -143,8 +143,9 @@ def load_obj(gym, sim, asset_root, asset_path, asset_options=None):
         obj_prop.rolling_friction = 3.0
         gym.set_asset_rigid_shape_properties(current_asset, [obj_prop])
         loaded_assets.append(current_asset)
-        count += 1
-        print(count)
+        # count += 1
+        # if count == args.num_objects:
+        #     break
     return loaded_assets
 
 
@@ -198,7 +199,7 @@ def create_obj_assets(args):
 
     # egad objects
     elif type == 'egad' or type == 4:
-        asset_root = '/home/sujc/code/vcpd-master/data/train/train_urdf'
+        asset_root = 'data/train/train_urdf'
         asset_paths = []
         paths = os.listdir(asset_root)
         for path in paths:
@@ -523,7 +524,7 @@ root_tensor = gymtorch.wrap_tensor(_root_tensor)
 
 vol_bnd = np.array([cfg['sdf']['x_min'], cfg['sdf']['y_min'], cfg['sdf']['z_min'] - 0.01,
                     cfg['sdf']['x_max'], cfg['sdf']['y_max'], cfg['sdf']['z_max'] - 0.01]).reshape(2, 3)
-voxel_length = cfg['sdf']['resolution']
+voxel_length = cfg['sdf']['voxel_lengthresolution']
 
 tsdf = TSDF(vol_bnd.T, voxel_length, rgb=False, device=device)
 pg = PandaGripper('../../assets')
@@ -636,7 +637,6 @@ while True:
     gym.start_access_image_tensors(sim)
 
     if time['stable'] < t <= time['tsdf']:
-        print('start render')
         depth_s = []
         mass = []
         for i in range(num_envs):
@@ -665,7 +665,6 @@ while True:
                                                 len(cam_body_root_idxs))
 
     if t == time['tsdf']:
-        print('start tsdf integrate')
         for i in range(num_envs):
 
             for j in range(f):
@@ -682,9 +681,12 @@ while True:
                 t = time['up'] + 20
                 continue_num += 1
                 print('env %s ,continue %s'%(i, continue_num))
-                if continue_num == 3:
-                    exit()
-                continue
+                if continue_num == 2:
+                    pos = np.array([0,0,1])
+                    quat = np.array([1,0,0,0])
+                    rot = R.from_quat(quat).as_matrix()
+                else:
+                    continue
             grasp_poses.append(pos)
             grasp_rots.append(rot)
             grasp_quats.append(quat)

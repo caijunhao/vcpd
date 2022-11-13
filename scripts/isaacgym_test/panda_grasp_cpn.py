@@ -3,11 +3,11 @@ import time as tt
 aa=tt.time()
 print('use cpn')
 custom_parameters = [{"name": "--headless", 'type': int, "default": 0, "help": "Direct 1, GUI 0"},
-                     {"name": "--num_envs", "type": int, "default": 500, "help": "Number of environments to create"},
-                     {"name": "--num_objects", "type": int, "default": 5, "help": "Number of objects in the bin"},
-                     {"name": "--gpu", "type": int, "default": 0, "help": "gpu device"},
+                     {"name": "--num_envs", "type": int, "default": 25, "help": "Number of environments to create"},
+                     {"name": "--num_objects", "type": int, "default": 10, "help": "Number of objects in the bin"},
+                     {"name": "--gpu", "type": int, "default": 1, "help": "gpu device"},
                      {"name": "--grasp_per_env", "type": int, "default": 1, "help": "grasps attempts per env"},
-                     {"name": "--obj_type", "type": int, "default": 1, "help": "0:primitive; 1:random; 2:kit"},
+                     {"name": "--obj_type", "type": int, "default": 0, "help": "0:primitive; 1:random; 2:kit"},
                      {"name": "--cpn_path", "type": str, "default": "../../log/20220421_p&b_cpn_32_34188.pth",
                       "help": "cpn model path"},
                      {"name": "--config", "type": str, "default": "../../config/config.json",
@@ -33,8 +33,8 @@ import json
 with open(args.config, 'r') as config_file:
     cfg = json.load(config_file)
 import sys
-# sys.path.append('/home/amax_sjc/catkin_ws/src/vcpd')
-# sys.path.append('/home/amax_sjc/catkin_ws/src/vcpd/src')
+# sys.path.append('/home/sujc/catkin_ws/src/vcpd')
+# sys.path.append('/home/sujc/catkin_ws/src/vcpd/src')
 from isaacgym import gymapi
 from isaacgym import gymtorch
 
@@ -42,7 +42,8 @@ import math
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 import torch
-from sdf import SDF
+from sdf import TSDF
+
 from isaac.utils import get_tray, add_noise, PandaGripper
 # torch.manual_seed(177)
 # np.random.seed(177)
@@ -185,12 +186,11 @@ def create_obj_assets(args):
 
     # egad objects
     elif type == 'egad' or type == 4:
-        asset_root = '/home/sujc/code/vcpd-master/data/train/train_urdf'
-        asset_paths = []
+        asset_root = '../../data/egad_eval_urdf'
         paths = os.listdir(asset_root)
+        asset_paths = []
         for path in paths:
-            if '.urdf' in path:
-                asset_paths.append(path)
+            asset_paths.append(path + '/' + path + '.urdf')
         obj_assets = load_obj(gym, sim, asset_root, asset_paths)
 
 
@@ -282,7 +282,7 @@ gym.add_ground(sim, plane_params)
 
 # set up the env grid
 
-spacing = 0.8
+spacing = 0.5
 # spacing = cfg['sdf']['x_max']
 env_lower = gymapi.Vec3(-spacing, -spacing, 0)
 env_upper = gymapi.Vec3(spacing, spacing, cfg['sdf']['z_max'])
@@ -510,8 +510,13 @@ root_tensor = gymtorch.wrap_tensor(_root_tensor)
 
 vol_bnd = np.array([cfg['sdf']['x_min'], cfg['sdf']['y_min'], cfg['sdf']['z_min'] - 0.01,
                     cfg['sdf']['x_max'], cfg['sdf']['y_max'], cfg['sdf']['z_max'] - 0.01]).reshape(2, 3)
-voxel_length = cfg['sdf']['resolution']
-tsdf = SDF(vol_bnd, voxel_length, rgb=False, device=device)
+voxel_length = cfg['sdf']['voxel_length']
+origin = vol_bnd[0]
+resolution = np.ceil((vol_bnd[1] - vol_bnd[0] - voxel_length / 7) / voxel_length).astype(np.int)
+
+tsdf = TSDF(origin, resolution, voxel_length, fuse_color=False, device=device)
+
+
 
 pg = PandaGripper('../../assets')
 grasp_poses = []
@@ -536,12 +541,12 @@ time = {'stable': s,
         'down': s + f + d,
         'close': s + f + d + c,
         'up': s + f + d + c + u,
-#         'away': s + f + d + c + u + a,
-#         'shake_1': s + f + d + c + u + a + 1 * s_,
-#         'shake_2': s + f + d + c + u + a + 2 * s_,
-#         'shake_3': s + f + d + c + u + a + 3 * s_,
-#         'shake_4': s + f + d + c + u + a + 4 * s_,
-#         'open': s + f + d + 2 * c + u + a + 6 * s_,
+        'away': s + f + d + c + u + a,
+        'shake_1': s + f + d + c + u + a + 1 * s_,
+        'shake_2': s + f + d + c + u + a + 2 * s_,
+        'shake_3': s + f + d + c + u + a + 3 * s_,
+        'shake_4': s + f + d + c + u + a + 4 * s_,
+        'open': s + f + d + 2 * c + u + a + 6 * s_,
         }
 
 isaac_rot = np.array([[0, -1, 0, 0], [0, 0, -1, 0], [1, 0, 0, 0], [0, 0, 0, 1]])
@@ -623,7 +628,6 @@ while True:
     gym.start_access_image_tensors(sim)
 
     if time['stable'] < t <= time['tsdf']:
-        print('start render')
         depth_s = []
         mass = []
         for i in range(num_envs):
@@ -652,7 +656,6 @@ while True:
                                                 len(cam_body_root_idxs))
 
     if t == time['tsdf']:
-        print('start tsdf integrate')
         for i in range(num_envs):
 
             for j in range(f):
@@ -661,14 +664,18 @@ while True:
             # tsdf.write_mesh('out_%s.ply' % i, *tsdf.compute_mesh(step_size=2))
 
             pos, rot, quat, cp1, cp2 = cpn_predict(tsdf, cpn, pg, cfg)
+            # pos, rot, quat, cp1, cp2 = cpn_predict(tsdf, cpn, pg, cfg)
 
             if pos is None:
                 t = time['up'] + 20
                 continue_num += 1
                 print('env %s ,continue %s'%(i, continue_num))
-                if continue_num == 3:
-                    exit()
-                continue
+                if continue_num == 2:
+                    pos = np.array([0,0,1])
+                    quat = np.array([1,0,0,0])
+                    rot = R.from_quat(quat).as_matrix()
+                else:
+                    continue
             grasp_poses.append(pos)
             grasp_rots.append(rot)
             grasp_quats.append(quat)
@@ -781,7 +788,7 @@ path = '../log/cpn'
 if not os.path.exists(path):
     os.makedirs(path)
 name = ['primitive', 'random', 'kit']
-np.savetxt(path+'/%s_%s_%s.txt'%(name[args.obj_type], num_objects, args.idx), txt, fmt='%i', delimiter=",")
+# np.savetxt(path+'/%s_%s_%s.txt'%(name[args.obj_type], num_objects, args.idx), txt, fmt='%i', delimiter=",")
 if not args.headless:
     gym.destroy_viewer(viewer)
 gym.destroy_sim(sim)
