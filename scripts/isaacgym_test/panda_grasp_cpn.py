@@ -33,8 +33,8 @@ import json
 with open(args.config, 'r') as config_file:
     cfg = json.load(config_file)
 import sys
-sys.path.append('/home/amax_sjc/catkin_ws/src/vcpd')
-sys.path.append('/home/amax_sjc/catkin_ws/src/vcpd/src')
+# sys.path.append('/home/amax_sjc/catkin_ws/src/vcpd')
+# sys.path.append('/home/amax_sjc/catkin_ws/src/vcpd/src')
 from isaacgym import gymapi
 from isaacgym import gymtorch
 
