@@ -142,6 +142,11 @@ python scripts/cpn/test_cpn.py \
 
 ---
 
+### Setup for real-robot grasping
+TODO
+
+---
+
 ### License
 
 The codebase and dataset are under **CC BY-NC-SA 3.0 license**. You may only use the code and data for academic purposes.
@@ -161,4 +166,6 @@ If you find our work useful, please consider citing.
 ```
 
 ### Acknowledgement
-The implementation the SDF is inspired by Andy Zeng's [tsdf-fusion-python](https://github.com/andyzeng/tsdf-fusion-python).
+The implementation of SDF module is inspired by Andy Zeng's [tsdf-fusion-python](https://github.com/andyzeng/tsdf-fusion-python) and Jingwen Wang's [KinectFusion](https://github.com/JingwenWang95/KinectFusion).
+
+The real-robot experiments are based on the [franka_ros_interface](https://github.com/justagist/franka_ros_interface).
