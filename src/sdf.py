@@ -259,13 +259,13 @@ class TSDF(object):
             out.append(grid_sample(sdf_vol, grid, mode=mode, padding_mode=padding_mode, align_corners=True).squeeze())
         if rgb:
             rgb_vol = self.rgb_vol.permute(3, 0, 1, 2).unsqueeze(dim=0)
-            out.append(grid_sample(rgb_vol, grid, mode='nearest', padding_mode=padding_mode, align_corners=True).squeeze())
+            out.append(grid_sample(rgb_vol, grid, mode='nearest', padding_mode=padding_mode, align_corners=True).squeeze().permute(1, 0))
         if weight:
             w_vol = self.w_vol.view(1, 1, h, w, d)
             out.append(grid_sample(w_vol, grid, mode=mode, padding_mode=padding_mode, align_corners=True).squeeze())
         if grad and self.grad_vol is not None:
             grad_vol = self.grad_vol.permute(3, 0, 1, 2).unsqueeze(dim=0)
-            out.append(grid_sample(grad_vol, grid, mode='nearest', padding_mode=padding_mode, align_corners=True).squeeze())
+            out.append(grid_sample(grad_vol, grid, mode='nearest', padding_mode=padding_mode, align_corners=True).squeeze().permute(1, 0))
         return out if len(out) > 1 else out[0]
 
     def get_ids(self, coords):
